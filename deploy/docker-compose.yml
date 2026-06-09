@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: recipie
+      POSTGRES_PASSWORD: recipie
+      POSTGRES_DB: recipie
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recipie"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      RUSTFS_ROOT_USER: rustfsadmin
+      RUSTFS_ROOT_PASSWORD: rustfsadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'curl -s http://127.0.0.1:9000/health | grep -q ''"status":"ok"''']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+
+  rustfs-init:
+    image: amazon/aws-cli:2.33.25
+    depends_on:
+      rustfs:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        set -e;
+        echo 'Waiting for S3 gateway getting ready...';
+        if aws --endpoint-url=http://rustfs:9000 s3api head-bucket --bucket recipie 2>/dev/null; then
+          echo 'Bucket recipie already exists. Skipping creation.';
+        else
+          echo 'Creating bucket recipie...';
+          aws --endpoint-url=http://rustfs:9000 s3api create-bucket --bucket recipie --region us-east-1;
+        fi
+      "
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_S3_ADDRESSING_STYLE: path
+    restart: "no"
+
+  backend:
+    build:
+      context: ../apps/backend-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../apps/backend-api/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://recipie:recipie@postgres:5432/recipie
+      S3_ENDPOINT_URL: http://rustfs:9000
+      S3_BUCKET_NAME: recipie
+      S3_ACCESS_KEY: rustfsadmin
+      S3_SECRET_KEY: rustfsadmin
+      ENVIRONMENT: local
+      CORS_ORIGINS: '["http://localhost:5173"]'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rustfs_data:

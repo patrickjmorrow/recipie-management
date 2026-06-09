@@ -1,0 +1,48 @@
+replicaCount: 1
+
+image:
+  repository: registry.example.com/recipie-management/backend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  # Hostnames for the three public endpoints
+  apiHost: api.domain.com
+  appHost: app.domain.com
+  docsHost: docs.domain.com
+
+  # RustFS S3-compatible endpoint (internal cluster URL or external)
+  rustfsEndpoint: http://rustfs.storage.svc.cluster.local:9000
+  rustfsBucket: recipie
+  rustfsDocsBucket: recipie-docs
+
+  # Set true if the RustFS buckets are publicly readable (no auth forwarding needed)
+  rustfsPublicRead: false
+
+  annotations:
+    kubernetes.io/ingress.class: nginx
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+env:
+  DATABASE_URL: ""        # set via secret in production
+  S3_ENDPOINT_URL: ""
+  S3_BUCKET_NAME: recipie
+  S3_ACCESS_KEY: ""       # set via secret
+  S3_SECRET_KEY: ""       # set via secret
+  ENVIRONMENT: production
+  CORS_ORIGINS: '["https://app.domain.com"]'
+
+# Name of an existing k8s Secret containing DATABASE_URL, S3_ACCESS_KEY, S3_SECRET_KEY
+# If empty, env values above are used directly (not recommended for prod)
+existingSecret: ""

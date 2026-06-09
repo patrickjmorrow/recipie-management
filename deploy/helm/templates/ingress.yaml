@@ -1,0 +1,58 @@
+{{- $rustfsEndpoint := .Values.ingress.rustfsEndpoint }}
+{{- $rustfsBucket := .Values.ingress.rustfsBucket }}
+{{- $rustfsDocsBucket := .Values.ingress.rustfsDocsBucket }}
+{{- $publicRead := .Values.ingress.rustfsPublicRead }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "recipie.fullname" . }}
+  labels:
+    {{- include "recipie.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    # Proxy /api → backend service
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  rules:
+    # Backend API
+    - host: {{ .Values.ingress.apiHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "recipie.fullname" . }}-backend
+                port:
+                  number: {{ .Values.service.port }}
+
+    # React SPA from RustFS — handled by a separate nginx VirtualServer or
+    # snippet annotation pointing to the RustFS bucket endpoint.
+    # Configured here as a placeholder; adjust based on your RustFS setup.
+    - host: {{ .Values.ingress.appHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Point to an nginx proxy service or RustFS service here.
+                # Replace with your actual static-hosting service name.
+                name: {{ include "recipie.fullname" . }}-backend
+                port:
+                  number: {{ .Values.service.port }}
+
+    # MkDocs site from RustFS
+    - host: {{ .Values.ingress.docsHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Replace with your actual static-hosting service name.
+                name: {{ include "recipie.fullname" . }}-backend
+                port:
+                  number: {{ .Values.service.port }}

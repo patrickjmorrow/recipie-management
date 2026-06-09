@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+
+# Alembic (keep versions/ tracked, ignore nothing extra)
+
+# Node
+node_modules/
+dist/
+.cache/
+
+# Vite
+*.local
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.override.yml
+
+# Helm secrets
+deploy/helm/secrets.yaml
+deploy/helm/values.local.yaml
+
+# MkDocs build
+site/

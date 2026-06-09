@@ -1,0 +1,142 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.database import get_db
+from app.models.ingredient import Ingredient, RecipeIngredient
+from app.models.recipe import Recipe
+from app.models.tag import Tag
+from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeSummary, RecipeUpdate
+
+router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+
+async def _get_recipe_with_relations(recipe_id: uuid.UUID, db: AsyncSession) -> Recipe | None:
+    result = await db.execute(
+        select(Recipe)
+        .where(Recipe.id == recipe_id)
+        .options(
+            selectinload(Recipe.tags),
+            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _upsert_ingredient(name: str, db: AsyncSession) -> Ingredient:
+    result = await db.execute(select(Ingredient).where(Ingredient.name == name))
+    ingredient = result.scalar_one_or_none()
+    if ingredient is None:
+        ingredient = Ingredient(name=name)
+        db.add(ingredient)
+        await db.flush()
+    return ingredient
+
+
+async def _resolve_tags(tag_ids: list[uuid.UUID], db: AsyncSession) -> list[Tag]:
+    if not tag_ids:
+        return []
+    result = await db.execute(select(Tag).where(Tag.id.in_(tag_ids)))
+    tags = result.scalars().all()
+    if len(tags) != len(tag_ids):
+        found = {t.id for t in tags}
+        missing = [tid for tid in tag_ids if tid not in found]
+        raise HTTPException(status_code=422, detail=f"Tags not found: {missing}")
+    return list(tags)
+
+
+@router.get("/", response_model=list[RecipeSummary])
+async def list_recipes(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Recipe).order_by(Recipe.created_at.desc()))
+    return result.scalars().all()
+
+
+@router.post("/", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
+async def create_recipe(payload: RecipeCreate, db: AsyncSession = Depends(get_db)):
+    recipe = Recipe(
+        title=payload.title,
+        description=payload.description,
+        instructions=payload.instructions,
+        image_key=payload.image_key,
+        recipie_metadata=payload.recipie_metadata,
+    )
+    db.add(recipe)
+    await db.flush()
+
+    for item in payload.ingredients:
+        ingredient = await _upsert_ingredient(item.ingredient_name, db)
+        db.add(RecipeIngredient(
+            recipe_id=recipe.id,
+            ingredient_id=ingredient.id,
+            quantity=item.quantity,
+            unit=item.unit,
+            note=item.note,
+            sort_order=item.sort_order,
+        ))
+
+    for tag in await _resolve_tags(payload.tag_ids, db):
+        recipe.tags.append(tag)
+
+    await db.commit()
+    return await _get_recipe_with_relations(recipe.id, db)
+
+
+@router.get("/{recipe_id}", response_model=RecipeResponse)
+async def get_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    recipe = await _get_recipe_with_relations(recipe_id, db)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return recipe
+
+
+@router.patch("/{recipe_id}", response_model=RecipeResponse)
+async def update_recipe(recipe_id: uuid.UUID, payload: RecipeUpdate, db: AsyncSession = Depends(get_db)):
+    recipe = await _get_recipe_with_relations(recipe_id, db)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    for schema_field, model_attr in [
+        ("title", "title"),
+        ("description", "description"),
+        ("instructions", "instructions"),
+        ("image_key", "image_key"),
+        ("recipie_metadata", "recipie_metadata"),
+    ]:
+        value = getattr(payload, schema_field, None)
+        if value is not None:
+            setattr(recipe, model_attr, value)
+
+    if payload.ingredients is not None:
+        for ri in list(recipe.recipe_ingredients):
+            await db.delete(ri)
+        await db.flush()
+        for item in payload.ingredients:
+            ingredient = await _upsert_ingredient(item.ingredient_name, db)
+            db.add(RecipeIngredient(
+                recipe_id=recipe.id,
+                ingredient_id=ingredient.id,
+                quantity=item.quantity,
+                unit=item.unit,
+                note=item.note,
+                sort_order=item.sort_order,
+            ))
+
+    if payload.tag_ids is not None:
+        recipe.tags.clear()
+        for tag in await _resolve_tags(payload.tag_ids, db):
+            recipe.tags.append(tag)
+
+    await db.commit()
+    return await _get_recipe_with_relations(recipe.id, db)
+
+
+@router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    await db.delete(recipe)
+    await db.commit()
