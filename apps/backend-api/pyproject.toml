@@ -9,6 +9,9 @@ dependencies = [
     "alembic>=1.13.0",
     "pydantic-settings>=2.0.0",
     "aiobotocore[boto3]>=2.15.0",
+    "google-auth>=2.0.0",
+    "pyjwt>=2.0.0",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]

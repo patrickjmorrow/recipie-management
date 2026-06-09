@@ -67,6 +67,7 @@ def upgrade() -> None:
         "tags",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(255), nullable=False),
+        sa.Column("deprecated_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint("name", name="uq_tags_name"),
     )
 

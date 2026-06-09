@@ -1,6 +1,7 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Column, ForeignKey, String, Table
+from sqlalchemy import Column, DateTime, ForeignKey, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -19,6 +20,7 @@ class Tag(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    deprecated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     recipes: Mapped[list["Recipe"]] = relationship(  # noqa: F821
         secondary=recipe_tags, back_populates="tags"

@@ -6,9 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.models.ingredient import Ingredient, RecipeIngredient
 from app.models.recipe import Recipe
 from app.models.tag import Tag
+from app.models.user import User
+from app.schemas.ingredient import RecipeIngredientCreate, RecipeIngredientResponse
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeSummary, RecipeUpdate
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -45,6 +48,9 @@ async def _resolve_tags(tag_ids: list[uuid.UUID], db: AsyncSession) -> list[Tag]
         found = {t.id for t in tags}
         missing = [tid for tid in tag_ids if tid not in found]
         raise HTTPException(status_code=422, detail=f"Tags not found: {missing}")
+    deprecated = [t.name for t in tags if t.deprecated_at is not None]
+    if deprecated:
+        raise HTTPException(status_code=422, detail=f"Tags are deprecated: {deprecated}")
     return list(tags)
 
 
@@ -139,4 +145,94 @@ async def delete_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     await db.delete(recipe)
+    await db.commit()
+
+
+# --- Recipe ingredient sub-resource ---
+
+async def _get_recipe_ingredient(recipe_id: uuid.UUID, ri_id: uuid.UUID, db: AsyncSession) -> RecipeIngredient:
+    result = await db.execute(
+        select(RecipeIngredient)
+        .where(RecipeIngredient.recipe_id == recipe_id, RecipeIngredient.id == ri_id)
+        .options(selectinload(RecipeIngredient.ingredient))
+    )
+    ri = result.scalar_one_or_none()
+    if not ri:
+        raise HTTPException(status_code=404, detail="Recipe ingredient not found")
+    return ri
+
+
+@router.get("/{recipe_id}/ingredients", response_model=list[RecipeIngredientResponse])
+async def list_recipe_ingredients(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    result = await db.execute(
+        select(RecipeIngredient)
+        .where(RecipeIngredient.recipe_id == recipe_id)
+        .options(selectinload(RecipeIngredient.ingredient))
+        .order_by(RecipeIngredient.sort_order)
+    )
+    return result.scalars().all()
+
+
+@router.post(
+    "/{recipe_id}/ingredients",
+    response_model=RecipeIngredientResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_recipe_ingredient(
+    recipe_id: uuid.UUID,
+    payload: RecipeIngredientCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    ingredient = await _upsert_ingredient(payload.ingredient_name, db)
+    ri = RecipeIngredient(
+        recipe_id=recipe_id,
+        ingredient_id=ingredient.id,
+        quantity=payload.quantity,
+        unit=payload.unit,
+        note=payload.note,
+        sort_order=payload.sort_order,
+    )
+    db.add(ri)
+    await db.commit()
+    return await _get_recipe_ingredient(recipe_id, ri.id, db)
+
+
+@router.patch("/{recipe_id}/ingredients/{ri_id}", response_model=RecipeIngredientResponse)
+async def update_recipe_ingredient(
+    recipe_id: uuid.UUID,
+    ri_id: uuid.UUID,
+    payload: RecipeIngredientCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    ri = await _get_recipe_ingredient(recipe_id, ri_id, db)
+    if payload.ingredient_name != ri.ingredient.name:
+        ri.ingredient = await _upsert_ingredient(payload.ingredient_name, db)
+    if payload.quantity is not None:
+        ri.quantity = payload.quantity
+    if payload.unit is not None:
+        ri.unit = payload.unit
+    if payload.note is not None:
+        ri.note = payload.note
+    ri.sort_order = payload.sort_order
+    await db.commit()
+    return await _get_recipe_ingredient(recipe_id, ri_id, db)
+
+
+@router.delete("/{recipe_id}/ingredients/{ri_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipe_ingredient(
+    recipe_id: uuid.UUID,
+    ri_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    ri = await _get_recipe_ingredient(recipe_id, ri_id, db)
+    await db.delete(ri)
     await db.commit()

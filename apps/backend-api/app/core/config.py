@@ -14,5 +14,10 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    GOOGLE_CLIENT_ID: str = ""
+    JWT_SECRET_KEY: str = "changeme"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 1440
+
 
 settings = Settings()
