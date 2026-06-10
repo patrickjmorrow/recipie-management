@@ -28,12 +28,16 @@ async def list_tags(
     return result.scalars().all()
 
 
-@router.post("/", response_model=TagResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TagResponse)
 async def create_tag(
     payload: TagCreate,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
+    existing = await db.execute(select(Tag).where(Tag.name == payload.name))
+    tag = existing.scalar_one_or_none()
+    if tag:
+        return tag
     tag = Tag(name=payload.name)
     db.add(tag)
     await db.commit()

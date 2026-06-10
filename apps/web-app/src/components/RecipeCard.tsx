@@ -1,0 +1,58 @@
+import type { RecipeSummary } from '../api/types'
+import PhotoPlaceholder from './PhotoPlaceholder'
+
+function metaText(recipe: RecipeSummary): string[] {
+  const m = recipe.recipie_metadata
+  if (!m) return []
+  const parts: string[] = []
+  if (m.prep_time != null && m.cook_time != null) parts.push(`${m.prep_time + m.cook_time} min`)
+  else if (m.prep_time != null) parts.push(`${m.prep_time} min prep`)
+  else if (m.cook_time != null) parts.push(`${m.cook_time} min cook`)
+  if (m.servings != null) parts.push(`serves ${m.servings}`)
+  if (m.difficulty) parts.push(m.difficulty)
+  return parts
+}
+
+interface Props {
+  recipe: RecipeSummary
+  variant: 'overlay' | 'card'
+  onClick?: () => void
+}
+
+export default function RecipeCard({ recipe, variant, onClick }: Props) {
+  const pills = metaText(recipe)
+
+  if (variant === 'overlay') {
+    return (
+      <div style={{ height: '100%', position: 'relative' }} onClick={onClick}>
+        <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
+        <div className="pa-mtile-overlay">
+          <div className="pa-mtile-title">{recipe.title}</div>
+          {pills.length > 0 && (
+            <span className="pa-mtile-meta-text">{pills.join(' · ')}</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button className="pa-card-btn" onClick={onClick}>
+      <PhotoPlaceholder ratio={16 / 9} style={{ borderRadius: 0, border: 'none' }} />
+      <div className="pa-card-body">
+        <div className="pa-card-title">{recipe.title}</div>
+        {recipe.description && (
+          <div className="pa-card-desc">{recipe.description}</div>
+        )}
+        {recipe.tags.length > 0 && (
+          <div className="pa-card-tags">
+            {recipe.tags.map(t => <span key={t.id} className="sk-chip">{t.name}</span>)}
+          </div>
+        )}
+        {pills.length > 0 && (
+          <span className="pa-card-meta-text">{pills.join(' · ')}</span>
+        )}
+      </div>
+    </button>
+  )
+}

@@ -33,5 +33,5 @@ class Recipe(Base):
         cascade="all, delete-orphan",
     )
     tags: Mapped[list["Tag"]] = relationship(  # noqa: F821
-        secondary=recipe_tags, back_populates="recipes"
+        secondary=recipe_tags, back_populates="recipes", lazy="selectin"
     )

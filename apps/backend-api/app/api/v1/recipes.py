@@ -1,7 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import Integer, cast, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,7 +11,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.ingredient import Ingredient, RecipeIngredient
 from app.models.recipe import Recipe
-from app.models.tag import Tag
+from app.models.tag import Tag, recipe_tags
 from app.models.user import User
 from app.schemas.ingredient import RecipeIngredientCreate, RecipeIngredientResponse
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeSummary, RecipeUpdate
@@ -55,8 +57,86 @@ async def _resolve_tags(tag_ids: list[uuid.UUID], db: AsyncSession) -> list[Tag]
 
 
 @router.get("/", response_model=list[RecipeSummary])
-async def list_recipes(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Recipe).order_by(Recipe.created_at.desc()))
+async def list_recipes(
+    tag_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    contains_ingredient_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    excludes_ingredient_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    author_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, min_length=1, max_length=100),
+    prep_time_max: int | None = Query(default=None, ge=0),
+    cook_time_max: int | None = Query(default=None, ge=0),
+    servings_min: int | None = Query(default=None, ge=1),
+    servings_max: int | None = Query(default=None, ge=1),
+    difficulty: str | None = Query(default=None, pattern="^(easy|medium|hard)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(Recipe)
+    filters = []
+
+    if author_id is not None:
+        filters.append(Recipe.author_id == author_id)
+
+    if search is not None:
+        filters.append(Recipe.title.ilike(f"%{search}%"))
+
+    if tag_ids:
+        tag_ids = list(dict.fromkeys(tag_ids))
+        tag_count_subq = (
+            select(func.count())
+            .select_from(recipe_tags)
+            .where(
+                recipe_tags.c.recipe_id == Recipe.id,
+                recipe_tags.c.tag_id.in_(tag_ids),
+            )
+            .correlate(Recipe)
+            .scalar_subquery()
+        )
+        filters.append(tag_count_subq == len(tag_ids))
+
+    if contains_ingredient_ids:
+        contains_ingredient_ids = list(dict.fromkeys(contains_ingredient_ids))
+        ing_count_subq = (
+            select(func.count())
+            .select_from(RecipeIngredient)
+            .where(
+                RecipeIngredient.recipe_id == Recipe.id,
+                RecipeIngredient.ingredient_id.in_(contains_ingredient_ids),
+            )
+            .correlate(Recipe)
+            .scalar_subquery()
+        )
+        filters.append(ing_count_subq == len(contains_ingredient_ids))
+
+    if excludes_ingredient_ids:
+        excl_subq = (
+            select(RecipeIngredient.id)
+            .where(
+                RecipeIngredient.recipe_id == Recipe.id,
+                RecipeIngredient.ingredient_id.in_(excludes_ingredient_ids),
+            )
+            .correlate(Recipe)
+        )
+        filters.append(not_(exists(excl_subq)))
+
+    if prep_time_max is not None:
+        filters.append(cast(Recipe.recipie_metadata["prep_time"].astext, Integer) <= prep_time_max)
+    if cook_time_max is not None:
+        filters.append(cast(Recipe.recipie_metadata["cook_time"].astext, Integer) <= cook_time_max)
+    if servings_min is not None:
+        filters.append(cast(Recipe.recipie_metadata["servings"].astext, Integer) >= servings_min)
+    if servings_max is not None:
+        filters.append(cast(Recipe.recipie_metadata["servings"].astext, Integer) <= servings_max)
+    if difficulty is not None:
+        filters.append(Recipe.recipie_metadata["difficulty"].astext == difficulty)
+
+    if filters:
+        stmt = stmt.where(*filters)
+
+    stmt = stmt.options(selectinload(Recipe.tags))
+    stmt = stmt.order_by(Recipe.created_at.desc()).limit(limit).offset(offset)
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 
@@ -72,7 +152,7 @@ async def create_recipe(payload: RecipeCreate, db: AsyncSession = Depends(get_db
     db.add(recipe)
     await db.flush()
 
-    for item in payload.ingredients:
+    for item in payload.recipe_ingredients:
         ingredient = await _upsert_ingredient(item.ingredient_name, db)
         db.add(RecipeIngredient(
             recipe_id=recipe.id,
@@ -83,8 +163,12 @@ async def create_recipe(payload: RecipeCreate, db: AsyncSession = Depends(get_db
             sort_order=item.sort_order,
         ))
 
-    for tag in await _resolve_tags(payload.tag_ids, db):
-        recipe.tags.append(tag)
+    tags = await _resolve_tags(payload.tag_ids, db)
+    if tags:
+        await db.execute(
+            recipe_tags.insert(),
+            [{"recipe_id": recipe.id, "tag_id": tag.id} for tag in tags],
+        )
 
     await db.commit()
     return await _get_recipe_with_relations(recipe.id, db)
@@ -115,11 +199,11 @@ async def update_recipe(recipe_id: uuid.UUID, payload: RecipeUpdate, db: AsyncSe
         if value is not None:
             setattr(recipe, model_attr, value)
 
-    if payload.ingredients is not None:
+    if payload.recipe_ingredients is not None:
         for ri in list(recipe.recipe_ingredients):
             await db.delete(ri)
         await db.flush()
-        for item in payload.ingredients:
+        for item in payload.recipe_ingredients:
             ingredient = await _upsert_ingredient(item.ingredient_name, db)
             db.add(RecipeIngredient(
                 recipe_id=recipe.id,
@@ -131,9 +215,13 @@ async def update_recipe(recipe_id: uuid.UUID, payload: RecipeUpdate, db: AsyncSe
             ))
 
     if payload.tag_ids is not None:
-        recipe.tags.clear()
-        for tag in await _resolve_tags(payload.tag_ids, db):
-            recipe.tags.append(tag)
+        await db.execute(recipe_tags.delete().where(recipe_tags.c.recipe_id == recipe.id))
+        tags = await _resolve_tags(payload.tag_ids, db)
+        if tags:
+            await db.execute(
+                recipe_tags.insert(),
+                [{"recipe_id": recipe.id, "tag_id": tag.id} for tag in tags],
+            )
 
     await db.commit()
     return await _get_recipe_with_relations(recipe.id, db)

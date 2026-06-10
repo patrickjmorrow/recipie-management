@@ -14,7 +14,7 @@ class RecipeCreate(BaseModel):
     instructions: str | None = None
     image_key: str | None = None
     recipie_metadata: dict[str, Any] | None = None
-    ingredients: list[RecipeIngredientCreate] = []
+    recipe_ingredients: list[RecipeIngredientCreate] = []
     tag_ids: list[uuid.UUID] = []
 
 
@@ -24,7 +24,7 @@ class RecipeUpdate(BaseModel):
     instructions: str | None = None
     image_key: str | None = None
     recipie_metadata: dict[str, Any] | None = None
-    ingredients: list[RecipeIngredientCreate] | None = None
+    recipe_ingredients: list[RecipeIngredientCreate] | None = None
     tag_ids: list[uuid.UUID] | None = None
 
 
@@ -37,6 +37,7 @@ class RecipeSummary(BaseModel):
     description: str | None
     image_key: str | None
     recipie_metadata: dict[str, Any] | None
+    tags: list[TagResponse] = []
     created_at: datetime
     updated_at: datetime
 
