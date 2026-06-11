@@ -20,3 +20,4 @@ class User(Base):
 
     recipes: Mapped[list["Recipe"]] = relationship(back_populates="author")  # noqa: F821
     identities: Mapped[list["UserIdentity"]] = relationship(back_populates="user")  # noqa: F821
+    reviews: Mapped[list["RecipeReview"]] = relationship(back_populates="reviewer")  # noqa: F821

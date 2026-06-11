@@ -38,6 +38,8 @@ class RecipeSummary(BaseModel):
     image_key: str | None
     recipie_metadata: dict[str, Any] | None
     tags: list[TagResponse] = []
+    avg_rating: float | None = None
+    review_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -56,6 +58,8 @@ class RecipeResponse(BaseModel):
     recipie_metadata: dict[str, Any] | None
     recipe_ingredients: list[RecipeIngredientResponse] = []
     tags: list[TagResponse] = []
+    avg_rating: float | None = None
+    review_count: int = 0
     created_at: datetime
     updated_at: datetime
 

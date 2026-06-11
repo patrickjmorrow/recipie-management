@@ -4,6 +4,7 @@ from app.models.identity import UserIdentity, OAuthProvider
 from app.models.ingredient import Ingredient, RecipeIngredient
 from app.models.tag import Tag, recipe_tags
 from app.models.recipe import Recipe
+from app.models.review import RecipeReview
 
 __all__ = [
     "Base",
@@ -15,4 +16,5 @@ __all__ = [
     "RecipeIngredient",
     "Tag",
     "recipe_tags",
+    "RecipeReview",
 ]

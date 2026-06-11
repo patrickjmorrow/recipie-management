@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,8 @@ class Recipe(Base):
     instructions: Mapped[str | None] = mapped_column(Text)
     image_key: Mapped[str | None] = mapped_column(String(512))
     recipie_metadata: Mapped[dict | None] = mapped_column(JSONB)
+    avg_rating: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    review_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -34,4 +36,7 @@ class Recipe(Base):
     )
     tags: Mapped[list["Tag"]] = relationship(  # noqa: F821
         secondary=recipe_tags, back_populates="recipes", lazy="selectin"
+    )
+    reviews: Mapped[list["RecipeReview"]] = relationship(  # noqa: F821
+        back_populates="recipe", cascade="all, delete-orphan"
     )

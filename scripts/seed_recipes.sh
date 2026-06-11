@@ -7,6 +7,7 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 SEED_EMAIL="${SEED_EMAIL:-seed@example.com}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if ! command -v jq &>/dev/null; then
   echo "Error: jq is required. Install with: apt install jq / brew install jq" >&2
@@ -29,7 +30,7 @@ create_tag() {
 }
 
 post_recipe() {
-  local name="$1" body="$2"
+  local name="$1" body="$2" image="${3:-}"
   echo "Creating: $name"
   local id
   id=$(curl -sf -X POST "$BASE_URL/api/v1/recipes/" \
@@ -37,6 +38,12 @@ post_recipe() {
     -H "Authorization: Bearer $TOKEN" \
     -d "$body" | jq -r '.id')
   echo "  -> $id"
+  if [[ -n "$image" && -f "$SCRIPT_DIR/images/$image" ]]; then
+    curl -sf -X POST "$BASE_URL/api/v1/recipes/$id/image" \
+      -H "Authorization: Bearer $TOKEN" \
+      -F "file=@$SCRIPT_DIR/images/$image" > /dev/null
+    echo "  image: $image"
+  fi
 }
 
 # ─── Tags ──────────────────────────────────────────────────────────────────
@@ -77,7 +84,7 @@ post_recipe "Classic Garlic Butter Shrimp" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$SEAFOOD"]
 }
 EOF
-)"
+)" "picture-of-garlic-shrimp.jpg"
 
 # 2. 5-Minute Pesto Tortellini — quick, pasta, vegetarian
 post_recipe "5-Minute Pesto Tortellini" "$(cat <<EOF
@@ -96,7 +103,7 @@ post_recipe "5-Minute Pesto Tortellini" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$PASTA", "$VEGETARIAN"]
 }
 EOF
-)"
+)" "picture-of-pesto-tortellini.jpg"
 
 # 3. Spicy Peanut Noodles — quick, pasta, Asian
 post_recipe "Spicy Peanut Noodles" "$(cat <<EOF
@@ -120,7 +127,7 @@ post_recipe "Spicy Peanut Noodles" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$PASTA", "$ASIAN"]
 }
 EOF
-)"
+)" "picture-of-peanut-noodles.jpg"
 
 # 4. Crispy Black Bean Quesadillas — quick, vegetarian, Mexican
 post_recipe "Crispy Black Bean Quesadillas" "$(cat <<EOF
@@ -140,7 +147,7 @@ post_recipe "Crispy Black Bean Quesadillas" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$VEGETARIAN", "$MEXICAN"]
 }
 EOF
-)"
+)" "picture-of-quesadilla.jpg"
 
 # 5. Quick Beef Rice Bowls — quick, beef, Asian
 post_recipe "Quick Beef Rice Bowls" "$(cat <<EOF
@@ -162,7 +169,7 @@ post_recipe "Quick Beef Rice Bowls" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$BEEF", "$ASIAN"]
 }
 EOF
-)"
+)" "picture-of-beef-bowl.jpg"
 
 # 6. Ultimate Caprese Avocado Toast — quick, vegetarian, breakfast, Mediterranean
 post_recipe "Ultimate Caprese Avocado Toast" "$(cat <<EOF
@@ -185,7 +192,7 @@ post_recipe "Ultimate Caprese Avocado Toast" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$VEGETARIAN", "$BREAKFAST", "$MEDITERRANEAN"]
 }
 EOF
-)"
+)" "picture-of-avocado-toast.jpg"
 
 # 7. Honey Garlic Glazed Salmon — quick, seafood
 post_recipe "Honey Garlic Glazed Salmon" "$(cat <<EOF
@@ -208,7 +215,7 @@ post_recipe "Honey Garlic Glazed Salmon" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$SEAFOOD"]
 }
 EOF
-)"
+)" "picture-of-glazed-salmon.jpg"
 
 # 8. Loaded Egg Scramble Sandwich — quick, breakfast
 post_recipe "Loaded Egg Scramble Sandwich" "$(cat <<EOF
@@ -231,7 +238,7 @@ post_recipe "Loaded Egg Scramble Sandwich" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$BREAKFAST"]
 }
 EOF
-)"
+)" "picture-of-egg-sandwich.jpg"
 
 # 9. Sheet Pan Greek Chicken Souvlaki — quick, chicken, Mediterranean
 post_recipe "Sheet Pan Greek Chicken Souvlaki" "$(cat <<EOF
@@ -254,7 +261,7 @@ post_recipe "Sheet Pan Greek Chicken Souvlaki" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$CHICKEN", "$MEDITERRANEAN"]
 }
 EOF
-)"
+)" "picture-of-greek-chicken.jpg"
 
 # 10. Creamy Tuscan White Bean Skillet — quick, vegetarian
 post_recipe "Creamy Tuscan White Bean Skillet" "$(cat <<EOF
@@ -276,7 +283,7 @@ post_recipe "Creamy Tuscan White Bean Skillet" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$VEGETARIAN"]
 }
 EOF
-)"
+)" "picture-of-bean-skillet.jpg"
 
 # 11. 10-Minute Thai Red Curry Soup — quick, chicken, Asian, soup
 post_recipe "10-Minute Thai Red Curry Soup" "$(cat <<EOF
@@ -299,7 +306,7 @@ post_recipe "10-Minute Thai Red Curry Soup" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$CHICKEN", "$ASIAN", "$SOUP"]
 }
 EOF
-)"
+)" "picture-of-curry-soup.jpg"
 
 # 12. Chappy's Quick BBQ Chicken Flatbread — quick, chicken, Mexican
 post_recipe "Chappy's Quick BBQ Chicken Flatbread" "$(cat <<EOF
@@ -320,7 +327,7 @@ post_recipe "Chappy's Quick BBQ Chicken Flatbread" "$(cat <<EOF
   "tag_ids": ["$QUICK", "$CHICKEN", "$MEXICAN"]
 }
 EOF
-)"
+)" "picture-of-bbq-flatbread.jpg"
 
 echo ""
 echo "Done. 11 tags and 12 recipes uploaded."

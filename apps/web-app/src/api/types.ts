@@ -33,6 +33,8 @@ export interface RecipeSummary {
   image_key: string | null
   recipie_metadata: RecipeMetadata | null
   tags: TagResponse[]
+  avg_rating: number | null
+  review_count: number
   created_at: string
   updated_at: string
 }
@@ -61,6 +63,27 @@ export interface RecipeCreate {
 }
 
 export type RecipeUpdate = Partial<RecipeCreate>
+
+export interface ReviewResponse {
+  id: string
+  recipe_id: string
+  reviewer_id: string
+  reviewer_display_name: string
+  rating: number
+  body: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ReviewCreate {
+  rating: number
+  body?: string
+}
+
+export interface ReviewUpdate {
+  rating?: number
+  body?: string
+}
 
 export interface UserResponse {
   id: string

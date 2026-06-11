@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getRecipeImageUrl } from '../api/client'
 import type { RecipeSummary } from '../api/types'
 import PhotoPlaceholder from './PhotoPlaceholder'
+import StarRating from './StarRating'
 
 function metaText(recipe: RecipeSummary): string[] {
   const m = recipe.recipie_metadata
@@ -27,7 +28,7 @@ export default function RecipeCard({ recipe, variant, onClick }: Props) {
 
   useEffect(() => {
     if (!recipe.image_key) { setImgUrl(null); return }
-    getRecipeImageUrl(recipe.id).then(setImgUrl).catch(() => {})
+    getRecipeImageUrl(recipe.id, recipe.image_key).then(setImgUrl).catch(() => {})
   }, [recipe.id, recipe.image_key])
 
   if (variant === 'overlay') {
@@ -41,6 +42,11 @@ export default function RecipeCard({ recipe, variant, onClick }: Props) {
           <div className="pa-mtile-title">{recipe.title}</div>
           {pills.length > 0 && (
             <span className="pa-mtile-meta-text">{pills.join(' · ')}</span>
+          )}
+          {recipe.avg_rating !== null && (
+            <span className="pa-mtile-rating">
+              <StarRating value={recipe.avg_rating} size={11} />
+            </span>
           )}
         </div>
       </div>
@@ -61,6 +67,11 @@ export default function RecipeCard({ recipe, variant, onClick }: Props) {
         {recipe.tags.length > 0 && (
           <div className="pa-card-tags">
             {recipe.tags.map(t => <span key={t.id} className="sk-chip">{t.name}</span>)}
+          </div>
+        )}
+        {(recipe.avg_rating !== null || recipe.review_count > 0) && (
+          <div className="pa-card-rating">
+            <StarRating value={recipe.avg_rating} count={recipe.review_count} size={13} />
           </div>
         )}
         {pills.length > 0 && (

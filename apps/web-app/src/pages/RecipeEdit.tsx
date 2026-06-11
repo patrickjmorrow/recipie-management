@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { createRecipe, createTag, deleteRecipeImage, getRecipe, getRecipeImageUrl, getTags, updateRecipe, uploadRecipeImage } from '../api/client'
+import { createRecipe, createTag, deleteRecipe, deleteRecipeImage, getRecipe, getRecipeImageUrl, getTags, updateRecipe, uploadRecipeImage } from '../api/client'
 import type { RecipeIngredientCreate, RecipeMetadata, TagResponse } from '../api/types'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import RichTextEditor from '../components/RichTextEditor'
@@ -35,6 +35,7 @@ export default function RecipeEdit() {
   const [allTags, setAllTags] = useState<TagResponse[]>([])
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
@@ -75,7 +76,7 @@ export default function RecipeEdit() {
           setSelectedTags(r.tags)
           setExistingImageKey(r.image_key)
           if (r.image_key) {
-            getRecipeImageUrl(id).then(setExistingImageUrl).catch(() => {})
+            getRecipeImageUrl(id, r.image_key).then(setExistingImageUrl).catch(() => {})
           }
         })
         .catch(() => setLoadError('Recipe not found.'))
@@ -133,6 +134,13 @@ export default function RecipeEdit() {
       setRemoveExistingImage(true)
       setExistingImageUrl(null)
     }
+  }
+
+  async function handleDeleteRecipe() {
+    try {
+      await deleteRecipe(id!)
+      navigate('/recipes')
+    } catch {}
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -305,9 +313,18 @@ export default function RecipeEdit() {
                 placeholder="Write your instructions… Use '+ Add Step' to separate Cook Mode steps."
               />
             </div>
-            <button type="submit" className="pa-save-btn" disabled={saving || !title.trim()}>
-              {saving ? 'Saving…' : isNew ? 'Create Recipe' : 'Save Changes'}
-            </button>
+            <div className="pa-form-field">
+              <div className="pa-form-btns">
+              <button type="submit" className="pa-save-btn" disabled={saving || !title.trim()}>
+                {saving ? 'Saving…' : isNew ? 'Create Recipe' : 'Save Changes'}
+              </button>
+              {!isNew && (
+                <button type="button" className="pa-delete-btn" onClick={() => setShowDeleteConfirm(true)}>
+                  Delete Recipe
+                </button>
+              )}
+              </div>
+            </div>
           </div>
           <aside className="pa-edit-preview">
             <p className="pa-preview-title">{title || 'Recipe title'}</p>
@@ -336,6 +353,20 @@ export default function RecipeEdit() {
           </aside>
         </div>
       </form>
+      {showDeleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(24,32,27,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <div style={{ background: 'var(--paper)', borderRadius: 'var(--r)', boxShadow: 'var(--shadow-hi)', padding: '32px', maxWidth: 400, width: '90%' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>Delete recipe?</h2>
+            <p style={{ fontSize: 15, color: 'var(--ink2)', marginBottom: 28, lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--ink)' }}>{title}</strong> will be permanently deleted. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" className="pa-btn-outline" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button type="button" className="pa-delete-btn" onClick={handleDeleteRecipe}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

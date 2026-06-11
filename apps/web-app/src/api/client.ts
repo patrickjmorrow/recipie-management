@@ -3,6 +3,9 @@ import type {
   RecipeResponse,
   RecipeSummary,
   RecipeUpdate,
+  ReviewCreate,
+  ReviewResponse,
+  ReviewUpdate,
   TagResponse,
   TokenResponse,
   UserResponse,
@@ -112,8 +115,43 @@ export async function deleteRecipeImage(id: string): Promise<void> {
   return apiFetchForm<void>(`/recipes/${id}/image`, { method: 'DELETE' })
 }
 
-export async function getRecipeImageUrl(id: string): Promise<string> {
+export async function getReviews(recipeId: string): Promise<ReviewResponse[]> {
+  return apiFetch<ReviewResponse[]>(`/recipes/${recipeId}/reviews/?limit=50&offset=0`)
+}
+
+export async function createReview(recipeId: string, body: ReviewCreate): Promise<ReviewResponse> {
+  return apiFetch<ReviewResponse>(`/recipes/${recipeId}/reviews/`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function updateReview(
+  recipeId: string,
+  reviewId: string,
+  body: ReviewUpdate,
+): Promise<ReviewResponse> {
+  return apiFetch<ReviewResponse>(`/recipes/${recipeId}/reviews/${reviewId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function deleteReview(recipeId: string, reviewId: string): Promise<void> {
+  return apiFetch<void>(`/recipes/${recipeId}/reviews/${reviewId}`, { method: 'DELETE' })
+}
+
+const IMAGE_URL_TTL_MS = 55 * 60 * 1000 // 5 min short of server's 3600s TTL
+
+export async function getRecipeImageUrl(id: string, imageKey: string): Promise<string> {
+  const cacheKey = `recipe_imgurl:${imageKey}`
+  const cached = localStorage.getItem(cacheKey)
+  if (cached) {
+    const { url, expiresAt } = JSON.parse(cached)
+    if (Date.now() < expiresAt) return url
+  }
   const response = await apiFetch<{ url: string }>(`/recipes/${id}/image-url`)
+  localStorage.setItem(cacheKey, JSON.stringify({ url: response.url, expiresAt: Date.now() + IMAGE_URL_TTL_MS }))
   return response.url
 }
 

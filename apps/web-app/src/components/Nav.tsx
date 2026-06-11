@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -6,6 +6,18 @@ export default function Nav() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [menuOpen])
 
   const hidden = location.pathname === '/signin' || location.pathname.includes('/cook')
   if (hidden) return null
@@ -36,7 +48,7 @@ export default function Nav() {
       </div>
 
       {user && (
-        <div className="pa-nav-avatar-wrap" onMouseLeave={() => setMenuOpen(false)}>
+        <div className="pa-nav-avatar-wrap" ref={wrapRef}>
           <button
             className="pa-avatar"
             onClick={() => setMenuOpen(o => !o)}

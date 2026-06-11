@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteRecipeImage, getRecipe, getRecipeImageUrl } from '../api/client'
+import { getRecipe, getRecipeImageUrl } from '../api/client'
 import type { RecipeIngredientResponse, RecipeMetadata, RecipeResponse } from '../api/types'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
+import ReviewSection from '../components/ReviewSection'
+import StarRating from '../components/StarRating'
 import { useAuth } from '../contexts/AuthContext'
 
 function ClockIcon() {
@@ -94,22 +96,13 @@ export default function RecipeDetail() {
 
   useEffect(() => {
     if (!recipe?.image_key || !id) { setImageUrl(null); return }
-    getRecipeImageUrl(id).then(setImageUrl).catch(() => {})
+    getRecipeImageUrl(id, recipe.image_key).then(setImageUrl).catch(() => {})
   }, [id, recipe?.image_key])
 
   if (loading) return <div className="pa-loading">Loading…</div>
   if (error || !recipe) return <div className="pa-error">{error ?? 'Not found'}</div>
 
   const isAuthor = user?.id === recipe.author_id
-
-  async function handleRemoveImage() {
-    if (!id) return
-    try {
-      await deleteRecipeImage(id)
-      setRecipe(prev => prev ? { ...prev, image_key: null } : prev)
-      setImageUrl(null)
-    } catch {}
-  }
 
   return (
     <div className="pa-detail">
@@ -137,6 +130,11 @@ export default function RecipeDetail() {
             {isAuthor && user?.display_name && (
               <span className="pa-hero-author">by {user.display_name}</span>
             )}
+            {(recipe.avg_rating !== null || recipe.review_count > 0) && (
+              <div className="pa-hero-rating">
+                <StarRating value={recipe.avg_rating} count={recipe.review_count} size={18} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -152,11 +150,6 @@ export default function RecipeDetail() {
             <button className="pa-btn-outline" onClick={() => navigate(`/recipes/${id}/edit`)}>
               Edit Recipe
             </button>
-            {recipe.image_key && (
-              <button className="pa-btn-outline" onClick={handleRemoveImage}>
-                Remove photo
-              </button>
-            )}
           </div>
         )}
 
@@ -196,6 +189,8 @@ export default function RecipeDetail() {
             </button>
           </main>
         </div>
+
+        <ReviewSection recipeId={id!} authorId={recipe.author_id} />
       </div>
     </div>
   )

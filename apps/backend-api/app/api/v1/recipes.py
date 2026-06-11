@@ -143,13 +143,18 @@ async def list_recipes(
 
 
 @router.post("/", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)
-async def create_recipe(payload: RecipeCreate, db: AsyncSession = Depends(get_db)):
+async def create_recipe(
+    payload: RecipeCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     recipe = Recipe(
         title=payload.title,
         description=payload.description,
         instructions=payload.instructions,
         image_key=payload.image_key,
         recipie_metadata=payload.recipie_metadata,
+        author_id=current_user.id,
     )
     db.add(recipe)
     await db.flush()
@@ -185,10 +190,17 @@ async def get_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/{recipe_id}", response_model=RecipeResponse)
-async def update_recipe(recipe_id: uuid.UUID, payload: RecipeUpdate, db: AsyncSession = Depends(get_db)):
+async def update_recipe(
+    recipe_id: uuid.UUID,
+    payload: RecipeUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     recipe = await _get_recipe_with_relations(recipe_id, db)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.author_id is not None and recipe.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not the recipe author")
 
     for schema_field, model_attr in [
         ("title", "title"),
@@ -230,10 +242,16 @@ async def update_recipe(recipe_id: uuid.UUID, payload: RecipeUpdate, db: AsyncSe
 
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_recipe(
+    recipe_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     recipe = await db.get(Recipe, recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.author_id is not None and recipe.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not the recipe author")
     if recipe.image_key:
         await delete_file(recipe.image_key)
     await db.delete(recipe)
