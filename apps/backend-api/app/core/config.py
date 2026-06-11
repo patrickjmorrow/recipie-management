@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
 
     S3_ENDPOINT_URL: str = "http://localhost:9000"
+    S3_PUBLIC_URL: str = ""  # public-facing base URL for presigned URLs; defaults to S3_ENDPOINT_URL
     S3_BUCKET_NAME: str = "recipie"
     S3_ACCESS_KEY: str = "rustfsadmin"
     S3_SECRET_KEY: str = "rustfsadmin"

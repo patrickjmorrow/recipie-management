@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { getRecipeImageUrl } from '../api/client'
 import type { RecipeSummary } from '../api/types'
 import PhotoPlaceholder from './PhotoPlaceholder'
 
@@ -21,11 +23,20 @@ interface Props {
 
 export default function RecipeCard({ recipe, variant, onClick }: Props) {
   const pills = metaText(recipe)
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!recipe.image_key) { setImgUrl(null); return }
+    getRecipeImageUrl(recipe.id).then(setImgUrl).catch(() => {})
+  }, [recipe.id, recipe.image_key])
 
   if (variant === 'overlay') {
     return (
       <div style={{ height: '100%', position: 'relative' }} onClick={onClick}>
-        <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
+        {imgUrl
+          ? <img src={imgUrl} alt={recipe.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
+        }
         <div className="pa-mtile-overlay">
           <div className="pa-mtile-title">{recipe.title}</div>
           {pills.length > 0 && (
@@ -38,7 +49,10 @@ export default function RecipeCard({ recipe, variant, onClick }: Props) {
 
   return (
     <button className="pa-card-btn" onClick={onClick}>
-      <PhotoPlaceholder ratio={16 / 9} style={{ borderRadius: 0, border: 'none' }} />
+      {imgUrl
+        ? <img src={imgUrl} alt={recipe.title} style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', display: 'block' }} />
+        : <PhotoPlaceholder ratio={16 / 9} style={{ borderRadius: 0, border: 'none' }} />
+      }
       <div className="pa-card-body">
         <div className="pa-card-title">{recipe.title}</div>
         {recipe.description && (

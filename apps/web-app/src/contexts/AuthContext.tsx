@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { clearToken, devLogin, getMe, getToken, setToken } from '../api/client'
+import { clearToken, devLogin, getMe, getToken, googleLogin, setToken } from '../api/client'
 import type { UserResponse } from '../api/types'
 
 interface AuthContextValue {
@@ -7,6 +7,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   isLoading: boolean
   login: (email: string) => Promise<void>
+  loginWithGoogle: (credential: string) => Promise<void>
   logout: () => void
 }
 
@@ -34,13 +35,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(me)
   }, [])
 
+  const loginWithGoogle = useCallback(async (credential: string) => {
+    const token = await googleLogin(credential)
+    setToken(token.access_token)
+    const me = await getMe()
+    setUser(me)
+  }, [])
+
   const logout = useCallback(() => {
     clearToken()
     setUser(null)
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   )

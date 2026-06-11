@@ -50,6 +50,8 @@ services:
           echo 'Creating bucket recipie...';
           aws --endpoint-url=http://rustfs:9000 s3api create-bucket --bucket recipie --region us-east-1;
         fi
+        echo 'Applying CORS policy...';
+        aws --endpoint-url=http://rustfs:9000 s3api put-bucket-cors --bucket recipie --cors-configuration '{\"CORSRules\":[{\"AllowedHeaders\":[\"*\"],\"AllowedMethods\":[\"GET\",\"HEAD\"],\"AllowedOrigins\":[\"*\"],\"MaxAgeSeconds\":3000}]}';
       "
     environment:
       AWS_ACCESS_KEY_ID: rustfsadmin
@@ -68,9 +70,13 @@ services:
     volumes:
       - ../apps/backend-api/app:/app/app
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    env_file:
+      - path: ../apps/backend-api/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://recipie:recipie@postgres:5432/recipie
       S3_ENDPOINT_URL: http://rustfs:9000
+      S3_PUBLIC_URL: http://localhost:9000
       S3_BUCKET_NAME: recipie
       S3_ACCESS_KEY: rustfsadmin
       S3_SECRET_KEY: rustfsadmin

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { createRecipe, createTag, getRecipe, getTags, updateRecipe } from '../api/client'
+import { createRecipe, createTag, deleteRecipeImage, getRecipe, getRecipeImageUrl, getTags, updateRecipe, uploadRecipeImage } from '../api/client'
 import type { RecipeIngredientCreate, RecipeMetadata, TagResponse } from '../api/types'
+import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import RichTextEditor from '../components/RichTextEditor'
 
 interface IngRow {
@@ -35,6 +36,12 @@ export default function RecipeEdit() {
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [existingImageKey, setExistingImageKey] = useState<string | null>(null)
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null)
+  const [removeExistingImage, setRemoveExistingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getTags().then(setAllTags).catch(() => {})
@@ -66,10 +73,18 @@ export default function RecipeEdit() {
               : [freshRow()]
           )
           setSelectedTags(r.tags)
+          setExistingImageKey(r.image_key)
+          if (r.image_key) {
+            getRecipeImageUrl(id).then(setExistingImageUrl).catch(() => {})
+          }
         })
         .catch(() => setLoadError('Recipe not found.'))
     }
   }, [id, isNew])
+
+  useEffect(() => {
+    return () => { if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl) }
+  }, [imagePreviewUrl])
 
   async function addTag() {
     const name = tagInput.trim()
@@ -98,6 +113,26 @@ export default function RecipeEdit() {
 
   function removeIng(key: number) {
     setIngredients(prev => prev.filter(r => r.key !== key))
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setImageFile(file)
+    setImagePreviewUrl(URL.createObjectURL(file))
+    e.target.value = ''
+  }
+
+  function handleRemoveImage() {
+    if (imageFile) {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+      setImageFile(null)
+      setImagePreviewUrl(null)
+    } else {
+      setRemoveExistingImage(true)
+      setExistingImageUrl(null)
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -131,9 +166,12 @@ export default function RecipeEdit() {
     try {
       if (isNew) {
         const created = await createRecipe(body)
+        if (imageFile) await uploadRecipeImage(created.id, imageFile)
         navigate(`/recipes/${created.id}`)
       } else {
         await updateRecipe(id!, body)
+        if (removeExistingImage && existingImageKey) await deleteRecipeImage(id!)
+        if (imageFile) await uploadRecipeImage(id!, imageFile)
         navigate(`/recipes/${id}`)
       }
     } catch {
@@ -154,6 +192,37 @@ export default function RecipeEdit() {
       <form onSubmit={handleSave}>
         <div className="pa-edit-layout">
           <div className="pa-edit-form">
+            <div className="pa-form-field">
+              <label>Photo</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(imagePreviewUrl || existingImageUrl) ? (
+                  <img
+                    src={imagePreviewUrl ?? existingImageUrl!}
+                    alt="Recipe photo preview"
+                    style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)', display: 'block' }}
+                  />
+                ) : (
+                  <PhotoPlaceholder ratio={16 / 9} style={{ borderRadius: 8 }} label="No photo" />
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="pa-btn-outline" onClick={() => fileInputRef.current?.click()}>
+                    Choose photo
+                  </button>
+                  {(imagePreviewUrl || existingImageUrl) && (
+                    <button type="button" className="pa-btn-outline" onClick={handleRemoveImage}>
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handleImageChange}
+                />
+              </div>
+            </div>
             <div className="pa-form-field">
               <label>Title *</label>
               <input value={title} onChange={e => setTitle(e.target.value)} required placeholder="Recipe name" />

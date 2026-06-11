@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getRecipe } from '../api/client'
+import { deleteRecipeImage, getRecipe, getRecipeImageUrl } from '../api/client'
 import type { RecipeIngredientResponse, RecipeMetadata, RecipeResponse } from '../api/types'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import { useAuth } from '../contexts/AuthContext'
@@ -82,6 +82,7 @@ export default function RecipeDetail() {
   const [recipe, setRecipe] = useState<RecipeResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -91,18 +92,35 @@ export default function RecipeDetail() {
       .finally(() => setLoading(false))
   }, [id])
 
+  useEffect(() => {
+    if (!recipe?.image_key || !id) { setImageUrl(null); return }
+    getRecipeImageUrl(id).then(setImageUrl).catch(() => {})
+  }, [id, recipe?.image_key])
+
   if (loading) return <div className="pa-loading">Loading…</div>
   if (error || !recipe) return <div className="pa-error">{error ?? 'Not found'}</div>
 
   const isAuthor = user?.id === recipe.author_id
 
+  async function handleRemoveImage() {
+    if (!id) return
+    try {
+      await deleteRecipeImage(id)
+      setRecipe(prev => prev ? { ...prev, image_key: null } : prev)
+      setImageUrl(null)
+    } catch {}
+  }
+
   return (
     <div className="pa-detail">
       <div className="pa-detail-hero">
-        <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
+        {imageUrl
+          ? <img src={imageUrl} alt={recipe.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
+        }
         <div className="pa-hero-overlay">
           <div className="pa-hero-top">
-            <button className="pa-hero-btn pa-hero-btn-back" onClick={() => navigate(-1)}>← Back</button>
+            <button className="pa-hero-btn pa-hero-btn-back" onClick={() => navigate(-1)}>&lt; Back</button>
             <button className="pa-hero-btn pa-hero-btn-cook" onClick={() => navigate(`/recipes/${id}/cook`)}>
               ▷ Cook mode
             </button>
@@ -134,6 +152,11 @@ export default function RecipeDetail() {
             <button className="pa-btn-outline" onClick={() => navigate(`/recipes/${id}/edit`)}>
               Edit Recipe
             </button>
+            {recipe.image_key && (
+              <button className="pa-btn-outline" onClick={handleRemoveImage}>
+                Remove photo
+              </button>
+            )}
           </div>
         )}
 

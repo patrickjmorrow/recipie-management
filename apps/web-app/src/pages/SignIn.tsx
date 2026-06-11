@@ -1,10 +1,11 @@
+import { GoogleLogin } from '@react-oauth/google'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function SignIn() {
-  const { login } = useAuth()
+  const { login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
@@ -21,6 +22,17 @@ export default function SignIn() {
       setError('Sign in failed. Check your email and try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleGoogleSuccess(response: { credential?: string }) {
+    if (!response.credential) return
+    setError(null)
+    try {
+      await loginWithGoogle(response.credential)
+      navigate('/browse')
+    } catch {
+      setError('Google sign in failed. Please try again.')
     }
   }
 
@@ -59,7 +71,12 @@ export default function SignIn() {
         </form>
         <div className="pa-signin-divider">or continue with</div>
         <div className="pa-signin-social">
-          <button className="pa-signin-social-btn" disabled>Continue with Google</button>
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError('Google sign in failed. Please try again.')}
+            width="100%"
+            text="continue_with"
+          />
           <button className="pa-signin-social-btn" disabled>Continue with Apple</button>
         </div>
       </div>

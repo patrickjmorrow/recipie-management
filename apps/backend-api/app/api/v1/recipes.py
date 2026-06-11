@@ -2,7 +2,7 @@ import uuid
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import Integer, cast, exists, func, not_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,6 +15,8 @@ from app.models.tag import Tag, recipe_tags
 from app.models.user import User
 from app.schemas.ingredient import RecipeIngredientCreate, RecipeIngredientResponse
 from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeSummary, RecipeUpdate
+from app.storage.images import sanitize_image
+from app.storage.s3 import delete_file, get_presigned_url, upload_file
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -232,8 +234,72 @@ async def delete_recipe(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     recipe = await db.get(Recipe, recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.image_key:
+        await delete_file(recipe.image_key)
     await db.delete(recipe)
     await db.commit()
+
+
+# --- Recipe image sub-resource ---
+
+@router.post("/{recipe_id}/image", response_model=RecipeResponse)
+async def upload_recipe_image(
+    recipe_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recipe = await _get_recipe_with_relations(recipe_id, db)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.author_id is not None and recipe.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not the recipe author")
+
+    data = await file.read()
+    try:
+        sanitized, content_type = sanitize_image(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    ext = content_type.split("/")[1]  # jpeg, png, or webp
+    key = f"images/{recipe_id}/{uuid.uuid4().hex}.{ext}"
+
+    old_key = recipe.image_key
+    if old_key:
+        await delete_file(old_key)
+
+    await upload_file(key, sanitized, content_type)
+    recipe.image_key = key
+    await db.commit()
+
+    return await _get_recipe_with_relations(recipe_id, db)
+
+
+@router.delete("/{recipe_id}/image", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipe_image(
+    recipe_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe.author_id is not None and recipe.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not the recipe author")
+    if recipe.image_key:
+        await delete_file(recipe.image_key)
+        recipe.image_key = None
+        await db.commit()
+
+
+@router.get("/{recipe_id}/image-url")
+async def get_recipe_image_url(recipe_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    recipe = await db.get(Recipe, recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    if not recipe.image_key:
+        raise HTTPException(status_code=404, detail="Recipe has no image")
+    return {"url": await get_presigned_url(recipe.image_key)}
 
 
 # --- Recipe ingredient sub-resource ---
