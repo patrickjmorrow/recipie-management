@@ -30,6 +30,10 @@ spec:
       secretName: {{ $fullName }}-docs-tls
     - hosts: [{{ .Values.ingress.s3Host | quote }}]
       secretName: {{ $fullName }}-s3-tls
+    {{- with .Values.ingress.consoleHost }}
+    - hosts: [{{ . | quote }}]
+      secretName: {{ $fullName }}-s3console-tls
+    {{- end }}
   {{- end }}
   rules:
     # Backend API
@@ -85,3 +89,16 @@ spec:
                 name: {{ $rustfsSvc }}
                 port:
                   number: 9000
+    {{- with .Values.ingress.consoleHost }}
+    # RustFS admin console (port 9001 on the RustFS service)
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $rustfsSvc }}
+                port:
+                  number: 9001
+    {{- end }}

@@ -116,13 +116,18 @@ ingress:
   # Rancher RKE2 ships ingress-nginx → "nginx". If your cluster uses Traefik
   # (K3s default), change this to "traefik".
   className: nginx
-  # sslip.io resolves <anything>.10.0.0.33.sslip.io → 10.0.0.33 (your node/LB IP).
-  apiHost: api.recipies.10.0.0.33.sslip.io
-  appHost: app.recipies.10.0.0.33.sslip.io
-  docsHost: docs.recipies.10.0.0.33.sslip.io
+  # sslip.io resolves <anything>.10.0.0.32.sslip.io → 10.0.0.32 (your node/LB IP).
+  apiHost: api.recipies.10.0.0.32.sslip.io
+  appHost: app.recipies.10.0.0.32.sslip.io
+  docsHost: docs.recipies.10.0.0.32.sslip.io
   # Public S3 endpoint — presigned image URLs are signed against this host,
   # so the browser must be able to reach it directly.
-  s3Host: s3.recipies.10.0.0.33.sslip.io
+  s3Host: s3.recipies.10.0.0.32.sslip.io
+  # RustFS admin console (port 9001). Reachable through the ingress because
+  # ingress-nginx routes to the pod IP (RustFS binds the pod interface, not
+  # loopback, which is why `kubectl port-forward` is refused). Leave empty to
+  # not expose the console.
+  consoleHost: s3console.recipies.10.0.0.32.sslip.io
   annotations: {}
   tls:
     enabled: false       # plain HTTP for now; flip to true once cert-manager is set up
