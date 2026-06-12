@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import Integer, cast, exists, func, not_, select, text
+from sqlalchemy import Integer, case, cast, exists, func, not_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -24,6 +24,7 @@ from app.models.tag import Tag, recipe_tags
 from app.models.user import User
 from app.schemas.ingredient import RecipeIngredientCreate, RecipeIngredientResponse
 from app.schemas.recipe import (
+    FridgeMatch,
     MacrosLineResult,
     MacrosPreview,
     MacrosPreviewRequest,
@@ -138,6 +139,12 @@ async def list_recipes(
     servings_min: int | None = Query(default=None, ge=1),
     servings_max: int | None = Query(default=None, ge=1),
     difficulty: str | None = Query(default=None, pattern="^(easy|medium|hard)$"),
+    protein_min: float | None = Query(default=None, ge=0),
+    protein_max: float | None = Query(default=None, ge=0),
+    carbs_min: float | None = Query(default=None, ge=0),
+    carbs_max: float | None = Query(default=None, ge=0),
+    energy_min: float | None = Query(default=None, ge=0),
+    energy_max: float | None = Query(default=None, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -149,7 +156,12 @@ async def list_recipes(
         filters.append(Recipe.author_id == author_id)
 
     if search is not None:
-        filters.append(Recipe.title.ilike(f"%{search}%"))
+        filters.append(
+            or_(
+                Recipe.title.ilike(f"%{search}%"),
+                Recipe.description.ilike(f"%{search}%"),
+            )
+        )
 
     if tag_ids:
         tag_ids = list(dict.fromkeys(tag_ids))
@@ -201,6 +213,22 @@ async def list_recipes(
     if difficulty is not None:
         filters.append(Recipe.recipie_metadata["difficulty"].astext == difficulty)
 
+    # Macro range filters run against the cached per-serving columns. Recipes
+    # with NULL macros are naturally excluded (an unknown macro can't be
+    # asserted in range), and the partial indexes cover these comparisons.
+    if protein_min is not None:
+        filters.append(Recipe.protein_g_per_serving >= protein_min)
+    if protein_max is not None:
+        filters.append(Recipe.protein_g_per_serving <= protein_max)
+    if carbs_min is not None:
+        filters.append(Recipe.carbs_g_per_serving >= carbs_min)
+    if carbs_max is not None:
+        filters.append(Recipe.carbs_g_per_serving <= carbs_max)
+    if energy_min is not None:
+        filters.append(Recipe.energy_kcal_per_serving >= energy_min)
+    if energy_max is not None:
+        filters.append(Recipe.energy_kcal_per_serving <= energy_max)
+
     if filters:
         stmt = stmt.where(*filters)
 
@@ -208,6 +236,86 @@ async def list_recipes(
     stmt = stmt.order_by(Recipe.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
     return result.scalars().all()
+
+
+# Declared before "/{recipe_id}" so "fridge" is never parsed as a UUID.
+@router.get("/fridge", response_model=list[FridgeMatch])
+async def fridge_recipes(
+    have_ingredient_ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+    max_missing: int = Query(default=5, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """"What's in my fridge": recipes you can make or almost make.
+
+    Given the ingredients you have, rank recipes by the fewest additional
+    *non-staple* ingredients needed. Pantry staples (salt, pepper, spices) are
+    ignored, so a recipe needing only "flour + salt" counts as ready if you
+    have flour. Only recipes with at least one matching ingredient are returned.
+    """
+    if not have_ingredient_ids:
+        return []
+    have = list(dict.fromkeys(have_ingredient_ids))
+
+    # Per recipe, over its non-staple ingredients only: count total vs. how many
+    # the user has. distinct() guards against an ingredient listed twice.
+    total_relevant = func.count(func.distinct(RecipeIngredient.ingredient_id))
+    matched = func.count(
+        func.distinct(
+            case((RecipeIngredient.ingredient_id.in_(have), RecipeIngredient.ingredient_id))
+        )
+    )
+    missing = (total_relevant - matched).label("missing_count")
+
+    stmt = (
+        select(
+            Recipe,
+            total_relevant.label("total_relevant_count"),
+            matched.label("matched_count"),
+            missing,
+        )
+        .join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id)
+        .join(Ingredient, Ingredient.id == RecipeIngredient.ingredient_id)
+        .where(Ingredient.is_staple.is_(False))
+        .group_by(Recipe.id)
+        .having(matched > 0)
+        .having((total_relevant - matched) <= max_missing)
+        .options(selectinload(Recipe.tags))
+        .order_by(missing.asc(), matched.desc(), Recipe.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await db.execute(stmt)).all()
+    if not rows:
+        return []
+
+    # Second pass: the actual non-staple ingredient names each recipe still needs.
+    recipe_ids = [row.Recipe.id for row in rows]
+    missing_stmt = (
+        select(RecipeIngredient.recipe_id, Ingredient.name)
+        .join(Ingredient, Ingredient.id == RecipeIngredient.ingredient_id)
+        .where(
+            RecipeIngredient.recipe_id.in_(recipe_ids),
+            Ingredient.is_staple.is_(False),
+            RecipeIngredient.ingredient_id.notin_(have),
+        )
+    )
+    missing_by_recipe: dict[uuid.UUID, list[str]] = {}
+    for recipe_id, name in (await db.execute(missing_stmt)).all():
+        missing_by_recipe.setdefault(recipe_id, []).append(name)
+
+    matches: list[FridgeMatch] = []
+    for row in rows:
+        # Stash the computed counts on the ORM object so from_attributes picks
+        # them up, mirroring how recipe.macros is attached elsewhere.
+        recipe = row.Recipe
+        recipe.matched_count = row.matched_count
+        recipe.missing_count = row.missing_count
+        recipe.total_relevant_count = row.total_relevant_count
+        recipe.missing_ingredient_names = sorted(set(missing_by_recipe.get(recipe.id, [])))
+        matches.append(FridgeMatch.model_validate(recipe))
+    return matches
 
 
 @router.post("/", response_model=RecipeResponse, status_code=status.HTTP_201_CREATED)

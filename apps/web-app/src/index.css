@@ -708,6 +708,47 @@ input, select, textarea { font-family: inherit; }
   color: var(--ink2);
   font-size: 15px;
 }
+.pa-search-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.pa-facet-hint { font-size: 12px; color: var(--ink2); line-height: 1.45; margin-bottom: 14px; }
+.pa-macro-range { display: flex; gap: 8px; }
+.pa-macro-range input { width: 100%; min-width: 0; }
+.pa-ing-picker { margin-bottom: 4px; }
+.pa-ing-picker input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  outline: none;
+}
+.pa-ing-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pa-chip-x {
+  margin-left: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+.pa-fridge-item { display: flex; flex-direction: column; gap: 6px; }
+.pa-fridge-badge {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+.pa-fridge-badge.ready {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* Edit */
 .pa-edit-page { padding: 24px; max-width: 1200px; margin: 0 auto; }

@@ -46,6 +46,19 @@ class RecipeSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FridgeMatch(RecipeSummary):
+    """A recipe ranked for "what's in my fridge": summary plus how well it's covered.
+
+    Counts ignore pantry staples (salt, pepper, common spices) — those are
+    assumed on-hand, so `missing_count` reflects only ingredients worth a shop.
+    """
+
+    matched_count: int
+    missing_count: int
+    total_relevant_count: int
+    missing_ingredient_names: list[str] = []
+
+
 class RecipeMacros(BaseModel):
     """Per-serving nutrition computed from linked USDA foods.
 

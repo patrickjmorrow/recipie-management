@@ -25,6 +25,13 @@ export interface IngredientResponse {
   food: FoodSearchResult | null
 }
 
+export interface FridgeMatch extends RecipeSummary {
+  matched_count: number
+  missing_count: number
+  total_relevant_count: number
+  missing_ingredient_names: string[]
+}
+
 export interface RecipeIngredientResponse {
   id: string
   ingredient: IngredientResponse

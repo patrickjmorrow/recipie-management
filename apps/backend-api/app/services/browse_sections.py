@@ -108,19 +108,19 @@ async def _fresh(db: AsyncSession, limit: int) -> list[Recipe]:
 
 # Ingredient-themed sections; each is its own entry so the random pick rotates them.
 _INGREDIENT_THEMES = [
-    ("chicken", "Extra Chicken? 🍗", "Crowd-pleasers built around chicken"),
-    ("pasta", "Pasta Night 🍝", "Twirl-worthy bowls of comfort"),
-    ("chocolate", "Chocolate Fix 🍫", "For when only chocolate will do"),
-    ("cheese", "Say Cheese 🧀", "Melty, gooey, unapologetically cheesy"),
-    ("egg", "Egg-cellent 🥚", "Eggs taking center stage"),
+    ("chicken", "Extra Chicken?", "Crowd-pleasers built around chicken"),
+    ("pasta", "Pasta Night", "Twirl-worthy bowls of comfort"),
+    ("chocolate", "Chocolate Fix", "For when only chocolate will do"),
+    ("cheese", "Say Cheese", "Melty, gooey, unapologetically cheesy"),
+    ("egg", "Egg-cellent", "Eggs taking center stage"),
 ]
 
 SECTIONS: list[SectionDef] = [
-    SectionDef("high_protein", "Gym Goals 💪", "Highest protein per serving", _high_protein),
-    SectionDef("low_carb", "Low Carb Options 🥗", "Lightest on the carbs", _low_carb),
-    SectionDef("under_30", "In a Hurry? ⏱️", "Start to finish in 30 minutes", _under_30),
-    SectionDef("top_rated", "Crowd Favorites ⭐", "Top rated by the community", _top_rated),
-    SectionDef("fresh", "Fresh from the Kitchen 🌿", "Just added", _fresh),
+    SectionDef("high_protein", "Gym Goals", "Highest protein per serving", _high_protein),
+    SectionDef("low_carb", "Low Carb Options", "Lightest on the carbs", _low_carb),
+    SectionDef("under_30", "In a Hurry? ", "Start to finish in 30 minutes", _under_30),
+    SectionDef("top_rated", "Crowd Favorites", "Top rated by the community", _top_rated),
+    SectionDef("fresh", "Fresh from the Kitchen", "Just added", _fresh),
     *[
         SectionDef(f"ingredient_{term}", title, subtitle, partial(_with_ingredient, term=term))
         for term, title, subtitle in _INGREDIENT_THEMES

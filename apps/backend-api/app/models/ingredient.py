@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -17,6 +17,9 @@ class Ingredient(Base):
     # Provenance of the link: 'auto' (full-text guess), 'confirmed' (human),
     # 'rejected' (human said no match). Lets re-matching skip human decisions.
     food_match: Mapped[str | None] = mapped_column(String(20))
+    # Pantry staple (salt, pepper, common spices): assumed on-hand, so the
+    # "what's in my fridge" search ignores it when counting missing ingredients.
+    is_staple: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     food: Mapped["Food | None"] = relationship(lazy="joined")  # noqa: F821
     recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="ingredient")
