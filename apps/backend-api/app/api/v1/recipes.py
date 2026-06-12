@@ -1,20 +1,37 @@
 import uuid
 
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import Integer, cast, exists, func, not_, select
+from sqlalchemy import Integer, cast, exists, func, not_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.food import Food
 from app.models.ingredient import Ingredient, RecipeIngredient
+from app.services.nutrition import (
+    MacroLine,
+    compute_macros,
+    recipe_macros,
+    resolve_grams,
+    supported_units,
+)
 from app.models.recipe import Recipe
 from app.models.tag import Tag, recipe_tags
 from app.models.user import User
 from app.schemas.ingredient import RecipeIngredientCreate, RecipeIngredientResponse
-from app.schemas.recipe import RecipeCreate, RecipeResponse, RecipeSummary, RecipeUpdate
+from app.schemas.recipe import (
+    MacrosLineResult,
+    MacrosPreview,
+    MacrosPreviewRequest,
+    RecipeCreate,
+    RecipeResponse,
+    RecipeSummary,
+    RecipeUpdate,
+)
 from app.storage.images import sanitize_image
 from app.storage.s3 import delete_file, get_presigned_url, upload_file
 
@@ -27,18 +44,56 @@ async def _get_recipe_with_relations(recipe_id: uuid.UUID, db: AsyncSession) -> 
         .where(Recipe.id == recipe_id)
         .options(
             selectinload(Recipe.tags),
-            selectinload(Recipe.recipe_ingredients).selectinload(RecipeIngredient.ingredient),
+            selectinload(Recipe.recipe_ingredients)
+            .selectinload(RecipeIngredient.ingredient)
+            .joinedload(Ingredient.food)
+            .selectinload(Food.portions),
         )
     )
-    return result.scalar_one_or_none()
+    recipe = result.scalar_one_or_none()
+    if recipe is not None:
+        # Transient attribute read by RecipeResponse.macros (from_attributes).
+        recipe.macros = recipe_macros(recipe)
+    return recipe
 
 
-async def _upsert_ingredient(name: str, db: AsyncSession) -> Ingredient:
+# Minimum ts_rank for an auto-match to be accepted. Free-text cooking names are
+# noisy; below this the guess is more likely wrong than right.
+FOOD_MATCH_THRESHOLD = 0.05
+
+
+async def _match_food(name: str, db: AsyncSession) -> int | None:
+    """Best-effort USDA food match for an ingredient name via the search_vec GIN index."""
+    rank = func.ts_rank(Food.search_vec, func.plainto_tsquery("english", name)).label("rank")
+    result = await db.execute(
+        select(Food.id, rank)
+        .where(Food.search_vec.op("@@")(func.plainto_tsquery("english", name)))
+        .order_by(text("rank DESC"))
+        .limit(1)
+    )
+    hit = result.first()
+    return hit.id if hit is not None and hit.rank > FOOD_MATCH_THRESHOLD else None
+
+
+async def _upsert_ingredient(name: str, food_id: int | None, db: AsyncSession) -> Ingredient:
+    """Find-or-create an ingredient, optionally pinning its USDA food link.
+
+    A non-null food_id confirms the link (overwriting any existing match) — note this
+    is global, affecting every recipe using the ingredient. With no food_id, a newly
+    created ingredient is auto-matched; an existing one is left untouched.
+    """
     result = await db.execute(select(Ingredient).where(Ingredient.name == name))
     ingredient = result.scalar_one_or_none()
     if ingredient is None:
-        ingredient = Ingredient(name=name)
+        ingredient = Ingredient(name=name, food_id=await _match_food(name, db), food_match="auto")
         db.add(ingredient)
+        await db.flush()
+    if food_id is not None:
+        food = await db.get(Food, food_id)
+        if not food:
+            raise HTTPException(status_code=404, detail=f"Food {food_id} not found")
+        ingredient.food_id = food_id
+        ingredient.food_match = "confirmed"
         await db.flush()
     return ingredient
 
@@ -160,7 +215,7 @@ async def create_recipe(
     await db.flush()
 
     for item in payload.recipe_ingredients:
-        ingredient = await _upsert_ingredient(item.ingredient_name, db)
+        ingredient = await _upsert_ingredient(item.ingredient_name, item.food_id, db)
         db.add(RecipeIngredient(
             recipe_id=recipe.id,
             ingredient_id=ingredient.id,
@@ -179,6 +234,59 @@ async def create_recipe(
 
     await db.commit()
     return await _get_recipe_with_relations(recipe.id, db)
+
+
+# Declared before "/{recipe_id}" so "macros-preview" is never parsed as a UUID.
+@router.post("/macros-preview", response_model=MacrosPreview)
+async def preview_macros(
+    payload: MacrosPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Compute per-serving macros for a draft (unsaved) recipe.
+
+    Each line's food is the supplied food_id, or a best-effort auto-match on the
+    ingredient name. Returns per-line resolution detail so the UI can guide fixes.
+    Nothing is persisted.
+    """
+    # Resolve a food_id per line (given, else auto-matched by name).
+    resolved_ids: list[int | None] = []
+    for item in payload.recipe_ingredients:
+        if item.food_id is not None:
+            resolved_ids.append(item.food_id)
+        else:
+            resolved_ids.append(await _match_food(item.ingredient_name, db))
+
+    wanted = {fid for fid in resolved_ids if fid is not None}
+    foods_by_id: dict[int, Food] = {}
+    if wanted:
+        result = await db.execute(
+            select(Food).where(Food.id.in_(wanted)).options(selectinload(Food.portions))
+        )
+        foods_by_id = {f.id: f for f in result.scalars().all()}
+
+    lines: list[MacroLine] = []
+    line_results: list[MacrosLineResult] = []
+    for item, fid in zip(payload.recipe_ingredients, resolved_ids):
+        food = foods_by_id.get(fid) if fid is not None else None
+        lines.append(MacroLine(food=food, quantity=item.quantity, unit=item.unit, name=item.ingredient_name))
+        if food is None:
+            line_results.append(MacrosLineResult(
+                ingredient_name=item.ingredient_name, resolved=False, reason="no_food",
+            ))
+            continue
+        _, reason = resolve_grams(item.quantity, item.unit, food.portions)
+        line_results.append(MacrosLineResult(
+            ingredient_name=item.ingredient_name,
+            resolved=reason is None,
+            food_id=food.id,
+            food_name=food.name,
+            reason=reason,
+            supported_units=supported_units(food.portions) if reason == "unit_unmatched" else [],
+        ))
+
+    macros = compute_macros(lines, payload.servings or 1.0)
+    return MacrosPreview(**asdict(macros), lines=line_results)
 
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
@@ -218,7 +326,7 @@ async def update_recipe(
             await db.delete(ri)
         await db.flush()
         for item in payload.recipe_ingredients:
-            ingredient = await _upsert_ingredient(item.ingredient_name, db)
+            ingredient = await _upsert_ingredient(item.ingredient_name, item.food_id, db)
             db.add(RecipeIngredient(
                 recipe_id=recipe.id,
                 ingredient_id=ingredient.id,
@@ -362,7 +470,7 @@ async def add_recipe_ingredient(
     recipe = await db.get(Recipe, recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    ingredient = await _upsert_ingredient(payload.ingredient_name, db)
+    ingredient = await _upsert_ingredient(payload.ingredient_name, payload.food_id, db)
     ri = RecipeIngredient(
         recipe_id=recipe_id,
         ingredient_id=ingredient.id,
@@ -385,8 +493,8 @@ async def update_recipe_ingredient(
     _: User = Depends(get_current_user),
 ):
     ri = await _get_recipe_ingredient(recipe_id, ri_id, db)
-    if payload.ingredient_name != ri.ingredient.name:
-        ri.ingredient = await _upsert_ingredient(payload.ingredient_name, db)
+    if payload.ingredient_name != ri.ingredient.name or payload.food_id is not None:
+        ri.ingredient = await _upsert_ingredient(payload.ingredient_name, payload.food_id, db)
     if payload.quantity is not None:
         ri.quantity = payload.quantity
     if payload.unit is not None:

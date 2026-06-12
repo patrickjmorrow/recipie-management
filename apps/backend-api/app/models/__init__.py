@@ -5,6 +5,8 @@ from app.models.ingredient import Ingredient, RecipeIngredient
 from app.models.tag import Tag, recipe_tags
 from app.models.recipe import Recipe
 from app.models.review import RecipeReview
+from app.models.food import Food
+from app.models.food_portion import FoodPortion
 
 __all__ = [
     "Base",
@@ -17,4 +19,6 @@ __all__ = [
     "Tag",
     "recipe_tags",
     "RecipeReview",
+    "Food",
+    "FoodPortion",
 ]

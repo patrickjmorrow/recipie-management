@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { createRecipe, createTag, deleteRecipe, deleteRecipeImage, getRecipe, getRecipeImageUrl, getTags, updateRecipe, uploadRecipeImage } from '../api/client'
-import type { RecipeIngredientCreate, RecipeMetadata, TagResponse } from '../api/types'
+import { createRecipe, createTag, deleteRecipe, deleteRecipeImage, getIngredients, getRecipe, getRecipeImageUrl, getTags, previewMacros, searchFoods, updateRecipe, uploadRecipeImage } from '../api/client'
+import type { FoodSearchResult, IngredientResponse, MacrosLineResult, MacrosPreview, RecipeIngredientCreate, RecipeMetadata, TagResponse } from '../api/types'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import RichTextEditor from '../components/RichTextEditor'
 
@@ -11,11 +11,17 @@ interface IngRow {
   quantity: string
   unit: string
   note: string
+  food_id: number | null
+  food_name: string | null
+  food_match: string | null
+  // True only when the user explicitly chose a food via the picker — gates whether
+  // we send food_id on save (so merely adopting an existing link never re-confirms it).
+  food_confirmed: boolean
 }
 
 let nextKey = 0
 function freshRow(): IngRow {
-  return { key: nextKey++, ingredient_name: '', quantity: '', unit: '', note: '' }
+  return { key: nextKey++, ingredient_name: '', quantity: '', unit: '', note: '', food_id: null, food_name: null, food_match: null, food_confirmed: false }
 }
 
 export default function RecipeEdit() {
@@ -42,6 +48,7 @@ export default function RecipeEdit() {
   const [existingImageKey, setExistingImageKey] = useState<string | null>(null)
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null)
   const [removeExistingImage, setRemoveExistingImage] = useState(false)
+  const [macros, setMacros] = useState<MacrosPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -70,6 +77,10 @@ export default function RecipeEdit() {
                     quantity: ri.quantity != null ? String(ri.quantity) : '',
                     unit: ri.unit ?? '',
                     note: ri.note ?? '',
+                    food_id: ri.ingredient.food_id,
+                    food_name: ri.ingredient.food?.name ?? null,
+                    food_match: ri.ingredient.food_match,
+                    food_confirmed: false,
                   }))
               : [freshRow()]
           )
@@ -86,6 +97,37 @@ export default function RecipeEdit() {
   useEffect(() => {
     return () => { if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl) }
   }, [imagePreviewUrl])
+
+  // Live per-serving nutrition preview, debounced as ingredients/servings change.
+  const macrosKey = JSON.stringify({
+    servings,
+    lines: ingredients
+      .filter(r => r.ingredient_name.trim())
+      .map(r => [r.ingredient_name.trim(), r.quantity, r.unit, r.food_id]),
+  })
+  useEffect(() => {
+    const lines = ingredients
+      .filter(r => r.ingredient_name.trim())
+      .map(r => ({
+        ingredient_name: r.ingredient_name.trim(),
+        quantity: r.quantity ? Number(r.quantity) : undefined,
+        unit: r.unit || undefined,
+        food_id: r.food_id ?? undefined,
+      }))
+    if (!lines.length) {
+      setMacros(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      previewMacros({ servings: servings ? Number(servings) : undefined, recipe_ingredients: lines })
+        .then(m => { if (!cancelled) setMacros(m) })
+        .catch(() => { if (!cancelled) setMacros(null) })
+    }, 500)
+    return () => { cancelled = true; clearTimeout(timer) }
+    // macrosKey captures the relevant inputs; ingredients/servings read inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [macrosKey])
 
   async function addTag() {
     const name = tagInput.trim()
@@ -108,8 +150,23 @@ export default function RecipeEdit() {
     setSelectedTags(prev => prev.filter(t => t.id !== id))
   }
 
-  function updateIng(key: number, field: keyof Omit<IngRow, 'key'>, value: string) {
+  function updateIng(key: number, field: 'ingredient_name' | 'quantity' | 'unit' | 'note', value: string) {
     setIngredients(prev => prev.map(r => r.key === key ? { ...r, [field]: value } : r))
+  }
+
+  // Explicit user choice via the food picker → marks the link save-worthy (confirmed).
+  function setIngFood(key: number, food: FoodSearchResult | null) {
+    setIngredients(prev => prev.map(r => r.key === key
+      ? { ...r, food_id: food ? food.id : null, food_name: food ? food.name : null, food_match: food ? 'confirmed' : 'rejected', food_confirmed: true }
+      : r))
+  }
+
+  // Picked an existing ingredient from search: fill the name and adopt its saved
+  // food link for display/preview, but do NOT confirm it (food_confirmed stays false).
+  function adoptIngredient(key: number, ing: IngredientResponse) {
+    setIngredients(prev => prev.map(r => r.key === key
+      ? { ...r, ingredient_name: ing.name, food_id: ing.food_id, food_name: ing.food?.name ?? null, food_match: ing.food_match, food_confirmed: false }
+      : r))
   }
 
   function removeIng(key: number) {
@@ -160,6 +217,8 @@ export default function RecipeEdit() {
         unit: r.unit || undefined,
         note: r.note || undefined,
         sort_order: i,
+        // Only persist the food link when the user explicitly confirmed it via the picker.
+        food_id: r.food_confirmed ? (r.food_id ?? undefined) : undefined,
       }))
 
     const body = {
@@ -190,6 +249,10 @@ export default function RecipeEdit() {
   if (loadError) return <div className="pa-error">{loadError}</div>
 
   const previewIngredients = ingredients.filter(r => r.ingredient_name.trim()).slice(0, 3)
+  // Per-line resolution detail from the latest preview, keyed by ingredient name.
+  const lineResults = new Map<string, MacrosLineResult>(
+    (macros?.lines ?? []).map(l => [l.ingredient_name.trim().toLowerCase(), l]),
+  )
 
   return (
     <div className="pa-edit-page">
@@ -265,15 +328,30 @@ export default function RecipeEdit() {
             <div className="pa-form-field">
               <label>Ingredients</label>
               <div className="pa-ing-list">
-                {ingredients.map(row => (
-                  <div key={row.key} className="pa-ing-row">
-                    <input placeholder="Qty" value={row.quantity} onChange={e => updateIng(row.key, 'quantity', e.target.value)} />
-                    <input placeholder="Unit" value={row.unit} onChange={e => updateIng(row.key, 'unit', e.target.value)} />
-                    <input placeholder="Ingredient *" value={row.ingredient_name} onChange={e => updateIng(row.key, 'ingredient_name', e.target.value)} />
-                    <input placeholder="Note" value={row.note} onChange={e => updateIng(row.key, 'note', e.target.value)} />
-                    <button type="button" className="pa-ing-remove" onClick={() => removeIng(row.key)}>×</button>
+                {ingredients.map(row => {
+                  const line = lineResults.get(row.ingredient_name.trim().toLowerCase())
+                  return (
+                  <div key={row.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div className="pa-ing-row">
+                      <input placeholder="Qty" value={row.quantity} onChange={e => updateIng(row.key, 'quantity', e.target.value)} />
+                      <input placeholder="Unit" value={row.unit} onChange={e => updateIng(row.key, 'unit', e.target.value)} />
+                      <IngredientNameInput
+                        value={row.ingredient_name}
+                        onChange={v => updateIng(row.key, 'ingredient_name', v)}
+                        onAdopt={ing => adoptIngredient(row.key, ing)}
+                      />
+                      <input placeholder="Note" value={row.note} onChange={e => updateIng(row.key, 'note', e.target.value)} />
+                      <button type="button" className="pa-ing-remove" onClick={() => removeIng(row.key)}>×</button>
+                    </div>
+                    {row.ingredient_name.trim() && (
+                      <IngredientFoodControl row={row} onPick={f => setIngFood(row.key, f)} />
+                    )}
+                    {row.ingredient_name.trim() && line && !line.resolved && (
+                      <UnresolvedHint line={line} unit={row.unit} />
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
               <button type="button" className="pa-add" style={{ marginTop: 8 }} onClick={() => setIngredients(prev => [...prev, freshRow()])}>
                 + Add ingredient
@@ -335,6 +413,22 @@ export default function RecipeEdit() {
               {difficulty && <span className="pa-card-meta-pill">{difficulty}</span>}
             </div>
             {description && <p className="pa-preview-desc">{description}</p>}
+            {macros && (
+              <div style={{ marginTop: 14 }}>
+                <p className="pa-preview-ing-heading">Nutrition (per serving)</p>
+                <div className="pa-preview-meta">
+                  <span className="pa-card-meta-pill">{Math.round(macros.energy_kcal)} kcal</span>
+                  <span className="pa-card-meta-pill">{macros.protein_g} g protein</span>
+                  <span className="pa-card-meta-pill">{macros.carbs_g} g carbs</span>
+                  <span className="pa-card-meta-pill">{macros.fat_g} g fat</span>
+                </div>
+                {macros.unresolved.length > 0 && (
+                  <p style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 6 }}>
+                    Not counted (no nutrition match): {macros.unresolved.join(', ')}
+                  </p>
+                )}
+              </div>
+            )}
             {previewIngredients.length > 0 && (
               <>
                 <p className="pa-preview-ing-heading">Ingredients</p>
@@ -365,6 +459,176 @@ export default function RecipeEdit() {
               <button type="button" className="pa-delete-btn" onClick={handleDeleteRecipe}>Delete</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Inline hint shown when a line can't be resolved to nutrition, explaining why
+// and (for unit mismatches) which measures the linked food actually supports.
+function UnresolvedHint({ line, unit }: { line: MacrosLineResult; unit: string }) {
+  let msg: React.ReactNode
+  if (line.reason === 'no_food') {
+    msg = 'No nutrition match — pick a food below.'
+  } else if (line.reason === 'no_quantity') {
+    msg = 'Add a quantity to include this in nutrition.'
+  } else if (line.reason === 'no_unit') {
+    msg = 'Add a unit to include this in nutrition.'
+  } else if (line.reason === 'unit_unmatched') {
+    const supported = line.supported_units.length ? line.supported_units.join(', ') + ', ' : ''
+    msg = (
+      <>
+        “{unit}” isn't a known measure for <strong>{line.food_name}</strong>. Try: {supported}or a mass unit (g, oz, lb, kg).
+      </>
+    )
+  } else {
+    msg = 'Not included in nutrition.'
+  }
+  return (
+    <div style={{ fontSize: 12, color: 'var(--warn, #a15c00)', paddingLeft: 2 }}>⚠ {msg}</div>
+  )
+}
+
+// Ingredient name field with type-ahead over existing ingredients. Selecting an
+// existing one adopts its saved nutrition link; "Create new" keeps the typed name.
+function IngredientNameInput({ value, onChange, onAdopt }: {
+  value: string
+  onChange: (v: string) => void
+  onAdopt: (ing: IngredientResponse) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [results, setResults] = useState<IngredientResponse[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    const q = value.trim()
+    if (!q) { setResults([]); return }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      getIngredients(q, 8)
+        .then(r => { if (!cancelled) setResults(r) })
+        .catch(() => { if (!cancelled) setResults([]) })
+    }, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [open, value])
+
+  const exactExists = results.some(r => r.name.toLowerCase() === value.trim().toLowerCase())
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        placeholder="Ingredient *"
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={{ width: '100%' }}
+      />
+      {open && value.trim() && (results.length > 0 || !exactExists) && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, marginTop: 2, background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 8, boxShadow: 'var(--shadow-hi)', maxHeight: 200, overflowY: 'auto' }}>
+          {results.map(ing => (
+            <button
+              key={ing.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onAdopt(ing); setOpen(false) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)', fontSize: 14 }}
+            >
+              {ing.name}
+              {ing.food?.name && <span style={{ color: 'var(--ink2)', fontSize: 12 }}> · {ing.food.name}</span>}
+            </button>
+          ))}
+          {!exactExists && (
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); setOpen(false) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 8px', border: 'none', borderTop: results.length ? '1px solid var(--line)' : 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink2)', fontSize: 13 }}
+            >
+              Create new: “{value.trim()}”
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const FOOD_BADGE = '13px'
+
+// Per-ingredient USDA food matcher: shows the current match and lets the user
+// search-and-pick a different food (or mark "no match"). Links are global —
+// changing one updates the ingredient everywhere it's used.
+function IngredientFoodControl({ row, onPick }: { row: IngRow; onPick: (food: FoodSearchResult | null) => void }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(row.ingredient_name)
+  const [results, setResults] = useState<FoodSearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const q = query.trim()
+    if (!q) { setResults([]); return }
+    let cancelled = false
+    setLoading(true)
+    const timer = setTimeout(() => {
+      searchFoods(q, 10)
+        .then(r => { if (!cancelled) setResults(r) })
+        .catch(() => { if (!cancelled) setResults([]) })
+        .finally(() => { if (!cancelled) setLoading(false) })
+    }, 350)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [open, query])
+
+  const badge =
+    row.food_id != null
+      ? { text: row.food_match === 'confirmed' ? 'confirmed' : 'auto', color: row.food_match === 'confirmed' ? 'var(--accent, #2d7d46)' : 'var(--ink2)' }
+      : row.food_match === 'rejected'
+        ? { text: 'no match', color: 'var(--ink2)' }
+        : { text: 'auto-match', color: 'var(--ink2)' }
+
+  return (
+    <div style={{ fontSize: FOOD_BADGE, color: 'var(--ink2)', paddingLeft: 2 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span>
+          Nutrition:{' '}
+          <span style={{ color: 'var(--ink)' }}>{row.food_name ?? (row.food_match === 'rejected' ? 'none' : 'matched by name')}</span>{' '}
+          <span style={{ color: badge.color }}>({badge.text})</span>
+        </span>
+        <button type="button" className="pa-btn-outline" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => { setQuery(row.ingredient_name); setOpen(o => !o) }}>
+          {open ? 'Close' : 'Change'}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 6, padding: 8, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--paper)' }}>
+          <input
+            autoFocus
+            placeholder="Search USDA foods…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            style={{ width: '100%', marginBottom: 6 }}
+          />
+          <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {loading && <span style={{ color: 'var(--ink2)' }}>Searching…</span>}
+            {!loading && results.length === 0 && query.trim() && <span style={{ color: 'var(--ink2)' }}>No foods found.</span>}
+            {results.map(f => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => { onPick(f); setOpen(false) }}
+                style={{ textAlign: 'left', padding: '4px 6px', borderRadius: 6, border: 'none', background: f.id === row.food_id ? 'var(--line)' : 'transparent', cursor: 'pointer', color: 'var(--ink)' }}
+              >
+                {f.name}{f.category ? <span style={{ color: 'var(--ink2)' }}> · {f.category}</span> : null}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+            <button type="button" className="pa-btn-outline" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => { onPick(null); setOpen(false) }}>
+              No good match
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 6, marginBottom: 0 }}>
+            Changing the food updates this ingredient everywhere it's used.
+          </p>
         </div>
       )}
     </div>

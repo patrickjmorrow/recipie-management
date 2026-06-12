@@ -11,7 +11,14 @@ class Ingredient(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Link to the canonical USDA food for nutrition. Stored once per ingredient
+    # name and inherited by every recipe that uses it.
+    food_id: Mapped[int | None] = mapped_column(ForeignKey("foods.id", ondelete="SET NULL"))
+    # Provenance of the link: 'auto' (full-text guess), 'confirmed' (human),
+    # 'rejected' (human said no match). Lets re-matching skip human decisions.
+    food_match: Mapped[str | None] = mapped_column(String(20))
 
+    food: Mapped["Food | None"] = relationship(lazy="joined")  # noqa: F821
     recipe_ingredients: Mapped[list["RecipeIngredient"]] = relationship(back_populates="ingredient")
 
 

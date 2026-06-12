@@ -801,7 +801,13 @@ input, select, textarea { font-family: inherit; }
 .pa-ing-list { display: flex; flex-direction: column; gap: 8px; }
 .pa-ing-row {
   display: grid;
-  grid-template-columns: 80px auto;
+  grid-template-columns: 55px auto;
+  gap: 8px;
+  align-items: center;
+}
+.pa-nutrition-row {
+  display: grid;
+  grid-template-columns: 100px auto;
   gap: 8px;
   align-items: center;
 }

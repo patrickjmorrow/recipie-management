@@ -1,4 +1,8 @@
 import type {
+  FoodSearchResult,
+  IngredientResponse,
+  MacrosPreview,
+  MacrosPreviewRequest,
   RecipeCreate,
   RecipeResponse,
   RecipeSummary,
@@ -95,6 +99,23 @@ export async function updateRecipe(id: string, body: RecipeUpdate): Promise<Reci
 
 export async function deleteRecipe(id: string): Promise<void> {
   return apiFetch<void>(`/recipes/${id}`, { method: 'DELETE' })
+}
+
+export async function searchFoods(q: string, limit = 20): Promise<FoodSearchResult[]> {
+  return apiFetch<FoodSearchResult[]>(`/foods/?${buildQuery({ q, limit: String(limit) })}`)
+}
+
+export async function getIngredients(q?: string, limit = 20): Promise<IngredientResponse[]> {
+  const params: Record<string, string> = { limit: String(limit) }
+  if (q) params.q = q
+  return apiFetch<IngredientResponse[]>(`/ingredients/?${buildQuery(params)}`)
+}
+
+export async function previewMacros(body: MacrosPreviewRequest): Promise<MacrosPreview> {
+  return apiFetch<MacrosPreview>('/recipes/macros-preview', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export async function getTags(): Promise<TagResponse[]> {

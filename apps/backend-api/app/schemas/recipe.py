@@ -46,6 +46,60 @@ class RecipeSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RecipeMacros(BaseModel):
+    """Per-serving nutrition computed from linked USDA foods.
+
+    `unresolved` lists ingredients excluded from the totals (no food link or no
+    convertible unit) so the numbers are never silently understated.
+    """
+
+    energy_kcal: float
+    protein_g: float
+    fat_g: float
+    sat_fat_g: float
+    carbs_g: float
+    fiber_g: float
+    sugar_g: float
+    sodium_mg: float
+    servings: float
+    unresolved: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+class MacrosPreviewLine(BaseModel):
+    ingredient_name: str
+    quantity: float | None = None
+    unit: str | None = None
+    food_id: int | None = None
+
+
+class MacrosPreviewRequest(BaseModel):
+    """A draft recipe's ingredient lines for computing macros without saving."""
+
+    servings: float | None = None
+    recipe_ingredients: list[MacrosPreviewLine] = []
+
+
+class MacrosLineResult(BaseModel):
+    """Per-line resolution detail for a draft preview, so the UI can guide fixes."""
+
+    ingredient_name: str
+    resolved: bool
+    food_id: int | None = None
+    food_name: str | None = None
+    # None when resolved; else 'no_food' | 'no_quantity' | 'no_unit' | 'unit_unmatched'.
+    reason: str | None = None
+    # Volume/count units this food supports (for 'unit_unmatched'); mass units always work.
+    supported_units: list[str] = []
+
+
+class MacrosPreview(RecipeMacros):
+    """Draft macros plus per-line resolution detail."""
+
+    lines: list[MacrosLineResult] = []
+
+
 class RecipeResponse(BaseModel):
     """Full recipe detail including nested ingredients and tags."""
 
@@ -58,6 +112,7 @@ class RecipeResponse(BaseModel):
     recipie_metadata: dict[str, Any] | None
     recipe_ingredients: list[RecipeIngredientResponse] = []
     tags: list[TagResponse] = []
+    macros: RecipeMacros | None = None
     avg_rating: float | None = None
     review_count: int = 0
     created_at: datetime

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getRecipe, getRecipeImageUrl } from '../api/client'
-import type { RecipeIngredientResponse, RecipeMetadata, RecipeResponse } from '../api/types'
+import type { RecipeIngredientResponse, RecipeMacros, RecipeMetadata, RecipeResponse } from '../api/types'
 import PhotoPlaceholder from '../components/PhotoPlaceholder'
 import ReviewSection from '../components/ReviewSection'
 import StarRating from '../components/StarRating'
@@ -73,6 +73,43 @@ function MetaPills({ meta }: { meta: RecipeMetadata | null }) {
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+function NutritionSection({ macros }: { macros: RecipeMacros | null }) {
+  if (!macros) return null
+  const rows: [string, string][] = [
+    ['Calories', `${Math.round(macros.energy_kcal)} kcal`],
+    ['Protein', `${macros.protein_g} g`],
+    ['Carbs', `${macros.carbs_g} g`],
+    ['Fat', `${macros.fat_g} g`],
+    ['Saturated fat', `${macros.sat_fat_g} g`],
+    ['Fiber', `${macros.fiber_g} g`],
+    ['Sugar', `${macros.sugar_g} g`],
+    ['Sodium', `${macros.sodium_mg} mg`],
+  ]
+  // Nothing resolved (e.g. no foods linked) → hide rather than show all-zeros.
+  if (macros.energy_kcal === 0 && macros.unresolved.length > 0 && rows.every(([, v]) => v.startsWith('0'))) {
+    return null
+  }
+  return (
+    <div className="pa-sidebar-section">
+      <h3 className="pa-section-heading">Nutrition</h3>
+      <span className="pa-ing-serves">PER SERVING</span>
+      <ul className="pa-ingredient-list">
+        {rows.map(([label, value]) => (
+          <li key={label} className="pa-nutrition-row">
+            <span className="pa-ing-name">{label}</span>
+            <span className="pa-ing-amt">{value}</span>
+          </li>
+        ))}
+      </ul>
+      {macros.unresolved.length > 0 && (
+        <p style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 6 }}>
+          {macros.unresolved.length} ingredient{macros.unresolved.length > 1 ? 's' : ''} not included (no nutrition match).
+        </p>
+      )}
     </div>
   )
 }
@@ -169,6 +206,7 @@ export default function RecipeDetail() {
                 </ul>
               </div>
             )}
+            <NutritionSection macros={recipe.macros} />
           </aside>
 
           <main className="pa-detail-main">

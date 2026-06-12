@@ -11,9 +11,18 @@ export interface TagResponse {
   deprecated_at: string | null
 }
 
+export interface FoodSearchResult {
+  id: number
+  name: string
+  category: string | null
+}
+
 export interface IngredientResponse {
   id: string
   name: string
+  food_id: number | null
+  food_match: string | null
+  food: FoodSearchResult | null
 }
 
 export interface RecipeIngredientResponse {
@@ -23,6 +32,19 @@ export interface RecipeIngredientResponse {
   unit: string | null
   note: string | null
   sort_order: number
+}
+
+export interface RecipeMacros {
+  energy_kcal: number
+  protein_g: number
+  fat_g: number
+  sat_fat_g: number
+  carbs_g: number
+  fiber_g: number
+  sugar_g: number
+  sodium_mg: number
+  servings: number
+  unresolved: string[]
 }
 
 export interface RecipeSummary {
@@ -42,6 +64,7 @@ export interface RecipeSummary {
 export interface RecipeResponse extends RecipeSummary {
   instructions: string | null
   recipe_ingredients: RecipeIngredientResponse[]
+  macros: RecipeMacros | null
 }
 
 export interface RecipeIngredientCreate {
@@ -50,6 +73,32 @@ export interface RecipeIngredientCreate {
   unit?: string
   note?: string
   sort_order: number
+  food_id?: number | null
+}
+
+export interface MacrosPreviewLine {
+  ingredient_name: string
+  quantity?: number
+  unit?: string
+  food_id?: number | null
+}
+
+export interface MacrosPreviewRequest {
+  servings?: number
+  recipe_ingredients: MacrosPreviewLine[]
+}
+
+export interface MacrosLineResult {
+  ingredient_name: string
+  resolved: boolean
+  food_id: number | null
+  food_name: string | null
+  reason: string | null
+  supported_units: string[]
+}
+
+export interface MacrosPreview extends RecipeMacros {
+  lines: MacrosLineResult[]
 }
 
 export interface RecipeCreate {
