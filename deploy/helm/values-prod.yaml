@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Production overrides for the local Rancher cluster (sslip.io DNS, plain HTTP).
+#
+# Usage:
+#   helm upgrade --install recipie deploy/helm \
+#     -f deploy/helm/values-prod.yaml \
+#     --set secrets.dbPassword=...    --set secrets.jwtSecret=... \
+#     --set rustfs.rootPassword=...   --set secrets.googleClientId=...
+#
+# Keep real secrets OUT of this file (it is committed) — pass them with --set
+# or a separate, git-ignored values-secrets.yaml. See the generation commands
+# in the deploy checklist.
+# ---------------------------------------------------------------------------
+
+backend:
+  replicaCount: 1
+  image:
+    # TODO: replace <dockerhub-user> with your Docker Hub namespace.
+    repository: docker.io/<dockerhub-user>/recipie-backend
+    pullPolicy: IfNotPresent
+    tag: "0.1.0"          # bump on every image push; avoid :latest in the cluster
+
+cnpg:
+  enabled: true
+  instances: 1            # single instance — no HA yet (fine for a homelab)
+  storage:
+    size: 5Gi
+    storageClass: ""      # "" → cluster default (local-path on most Rancher/K3s)
+
+rustfs:
+  enabled: true
+  rootUser: rustfsadmin   # override rootPassword via --set (see checklist)
+  storage:
+    size: 20Gi
+    storageClass: ""
+
+ingress:
+  # Rancher RKE2 ships ingress-nginx → "nginx". If your cluster uses Traefik
+  # (K3s default), change this to "traefik".
+  className: nginx
+  # sslip.io resolves <anything>.10.0.0.33.sslip.io → 10.0.0.33 (your node/LB IP).
+  apiHost: api.recipies.10.0.0.33.sslip.io
+  appHost: app.recipies.10.0.0.33.sslip.io
+  docsHost: docs.recipies.10.0.0.33.sslip.io
+  s3Host: s3.recipies.10.0.0.33.sslip.io
+  tls:
+    enabled: false        # plain HTTP for now; flip to true once cert-manager is set up
+
+secrets:
+  create: true
+  # Real values are injected at deploy time via --set (do NOT commit them):
+  #   dbPassword, jwtSecret, googleClientId
+  jwtSecret: "CHANGE_ME"
+  dbPassword: "CHANGE_ME"
+  googleClientId: "CHANGE_ME"   # Google OAuth client ID for the prod origin

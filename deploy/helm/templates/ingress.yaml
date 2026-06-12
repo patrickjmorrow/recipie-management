@@ -43,10 +43,19 @@ spec:
                 name: {{ $backendSvc }}
                 port:
                   number: {{ .Values.backend.service.port }}
-    # React SPA (nginx → RustFS app bucket)
+    # React SPA (nginx → RustFS app bucket). The SPA calls the API same-origin
+    # at /api/v1 (see web-app/src/api/client.ts), so /api is routed to the
+    # backend and everything else to the static nginx pod.
     - host: {{ .Values.ingress.appHost | quote }}
       http:
         paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $backendSvc }}
+                port:
+                  number: {{ .Values.backend.service.port }}
           - path: /
             pathType: Prefix
             backend:
