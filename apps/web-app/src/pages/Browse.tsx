@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getBrowseSections } from '../api/client'
 import type { BrowseSection } from '../api/types'
-import RecipeCard from '../components/RecipeCard'
+import RecipeCard, { formatBadge } from '../components/RecipeCard'
 
 export default function Browse() {
   const navigate = useNavigate()
@@ -25,9 +25,6 @@ export default function Browse() {
 
   const open = (id: string) => navigate(`/recipes/${id}`)
 
-  // The first recipe of the first section becomes a full-width featured hero.
-  const featured = sections[0]?.recipes[0] ?? null
-
   return (
     <div className="pa-browse">
       <div className="pa-browse-header">
@@ -48,26 +45,24 @@ export default function Browse() {
         <div className="pa-loading">No recipes yet — add one to get cooking!</div>
       )}
 
-      {!loading && !error && featured && (
-        <div className="pa-browse-hero" onClick={() => open(featured.id)}>
-          <RecipeCard recipe={featured} variant="overlay" />
-        </div>
-      )}
-
-      {!loading && !error && sections.map((section, si) => {
-        // Drop the hero recipe from the first section so it isn't shown twice.
-        const recipes = si === 0 ? section.recipes.slice(1) : section.recipes
-        if (recipes.length === 0) return null
+      {!loading && !error && sections.map(section => {
+        if (section.recipes.length === 0) return null
+        // First tile is the magazine "feature" (2×2); the CSS handles the spans.
         return (
           <section key={section.key} className="pa-section">
             <div className="pa-section-head">
               <h2 className="pa-section-title">{section.title}</h2>
               {section.subtitle && <span className="pa-section-sub">{section.subtitle}</span>}
             </div>
-            <div className="pa-rail">
-              {recipes.map(recipe => (
-                <div key={recipe.id} className="pa-rail-item">
-                  <RecipeCard recipe={recipe} variant="card" onClick={() => open(recipe.id)} />
+            <div className="pa-mosaic">
+              {section.recipes.map(recipe => (
+                <div key={recipe.id} className="pa-mosaic-tile">
+                  <RecipeCard
+                    recipe={recipe}
+                    variant="overlay"
+                    badge={formatBadge(recipe, section.badge)}
+                    onClick={() => open(recipe.id)}
+                  />
                 </div>
               ))}
             </div>

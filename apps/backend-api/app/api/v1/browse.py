@@ -22,7 +22,9 @@ async def get_browse_sections(
     sections = await build_sections(db, count, card_limit)
     return BrowseSectionsResponse(
         sections=[
-            BrowseSection(key=sd.key, title=sd.title, subtitle=sd.subtitle, recipes=recipes)
+            BrowseSection(
+                key=sd.key, title=sd.title, subtitle=sd.subtitle, badge=sd.badge, recipes=recipes
+            )
             for sd, recipes in sections
         ]
     )

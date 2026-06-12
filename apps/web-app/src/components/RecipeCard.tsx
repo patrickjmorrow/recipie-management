@@ -16,13 +16,50 @@ function metaText(recipe: RecipeSummary): string[] {
   return parts
 }
 
+/** Total prep+cook time in minutes, or null if neither is set. */
+function totalTime(recipe: RecipeSummary): number | null {
+  const m = recipe.recipie_metadata
+  if (!m) return null
+  if (m.prep_time == null && m.cook_time == null) return null
+  return (m.prep_time ?? 0) + (m.cook_time ?? 0)
+}
+
+/**
+ * Format a section's contextual stat for a tile, or null when the underlying data
+ * is missing so the tile simply omits the badge.
+ */
+export function formatBadge(recipe: RecipeSummary, badgeType: string | null): string | null {
+  switch (badgeType) {
+    case 'protein':
+      return recipe.protein_g_per_serving != null
+        ? `${Math.round(recipe.protein_g_per_serving * 10) / 10}g protein`
+        : null
+    case 'carbs':
+      return recipe.carbs_g_per_serving != null
+        ? `${Math.round(recipe.carbs_g_per_serving)}g carbs`
+        : null
+    case 'calories':
+      return recipe.energy_kcal_per_serving != null
+        ? `${Math.round(recipe.energy_kcal_per_serving)} cal`
+        : null
+    case 'time': {
+      const t = totalTime(recipe)
+      return t != null ? `${t} min` : null
+    }
+    default:
+      return null
+  }
+}
+
 interface Props {
   recipe: RecipeSummary
   variant: 'overlay' | 'card'
   onClick?: () => void
+  /** Optional contextual stat (overlay variant only), e.g. from `formatBadge`. */
+  badge?: string | null
 }
 
-export default function RecipeCard({ recipe, variant, onClick }: Props) {
+export default function RecipeCard({ recipe, variant, onClick, badge }: Props) {
   const pills = metaText(recipe)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
 
@@ -32,18 +69,24 @@ export default function RecipeCard({ recipe, variant, onClick }: Props) {
   }, [recipe.id, recipe.image_key])
 
   if (variant === 'overlay') {
+    // Show at most three tags so the overlay stays picture-forward.
+    const tags = recipe.tags.slice(0, 3)
     return (
       <div style={{ height: '100%', position: 'relative' }} onClick={onClick}>
         {imgUrl
           ? <img src={imgUrl} alt={recipe.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <PhotoPlaceholder style={{ height: '100%', borderRadius: 0, border: 'none' }} />
         }
+        {badge && <span className="pa-mtile-badge">{badge}</span>}
         <div className="pa-mtile-overlay">
           <div className="pa-mtile-title">{recipe.title}</div>
-          {pills.length > 0 && (
-            <span className="pa-mtile-meta-text">{pills.join(' · ')}</span>
+          {tags.length > 0 && (
+            <div className="pa-mtile-tags">
+              {tags.map(t => <span key={t.id} className="pa-mtile-chip">{t.name}</span>)}
+            </div>
           )}
-          {recipe.avg_rating !== null && (
+          {/* Badge carries the contextual stat; fall back to the rating when there's no badge. */}
+          {!badge && recipe.avg_rating !== null && (
             <span className="pa-mtile-rating">
               <StarRating value={recipe.avg_rating} size={11} />
             </span>

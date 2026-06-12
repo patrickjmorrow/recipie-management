@@ -40,6 +40,11 @@ class RecipeSummary(BaseModel):
     tags: list[TagResponse] = []
     avg_rating: float | None = None
     review_count: int = 0
+    # Per-serving macros cached on the Recipe row (NULL until computed) — surfaced so
+    # cards can show contextual stats like "32.6g protein" without a detail fetch.
+    energy_kcal_per_serving: float | None = None
+    protein_g_per_serving: float | None = None
+    carbs_g_per_serving: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -144,6 +149,9 @@ class BrowseSection(BaseModel):
     key: str
     title: str
     subtitle: str | None = None
+    # Names the contextual stat the tiles should highlight ("protein" | "carbs" | "time"
+    # | "calories"); None means no badge (e.g. rating-driven sections).
+    badge: str | None = None
     recipes: list[RecipeSummary] = []
 
 

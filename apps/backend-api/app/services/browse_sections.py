@@ -33,6 +33,9 @@ class SectionDef:
     title: str
     subtitle: str | None
     build: Callable[[AsyncSession, int], Awaitable[list[Recipe]]]
+    # Contextual stat the tiles should highlight: "protein" | "carbs" | "time"
+    # | "calories", or None to show no badge (rating-driven sections).
+    badge: str | None = None
 
 
 def _base():
@@ -116,13 +119,15 @@ _INGREDIENT_THEMES = [
 ]
 
 SECTIONS: list[SectionDef] = [
-    SectionDef("high_protein", "Gym Goals", "Highest protein per serving", _high_protein),
-    SectionDef("low_carb", "Low Carb Options", "Lightest on the carbs", _low_carb),
-    SectionDef("under_30", "In a Hurry? ", "Start to finish in 30 minutes", _under_30),
+    SectionDef("high_protein", "Gym Goals", "Highest protein per serving", _high_protein, badge="protein"),
+    SectionDef("low_carb", "Low Carb Options", "Lightest on the carbs", _low_carb, badge="carbs"),
+    SectionDef("under_30", "In a Hurry? ", "Start to finish in 30 minutes", _under_30, badge="time"),
     SectionDef("top_rated", "Crowd Favorites", "Top rated by the community", _top_rated),
-    SectionDef("fresh", "Fresh from the Kitchen", "Just added", _fresh),
+    SectionDef("fresh", "Fresh from the Kitchen", "Just added", _fresh, badge="calories"),
     *[
-        SectionDef(f"ingredient_{term}", title, subtitle, partial(_with_ingredient, term=term))
+        SectionDef(
+            f"ingredient_{term}", title, subtitle, partial(_with_ingredient, term=term), badge="calories"
+        )
         for term, title, subtitle in _INGREDIENT_THEMES
     ],
 ]

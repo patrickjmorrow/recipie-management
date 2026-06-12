@@ -64,6 +64,9 @@ export interface RecipeSummary {
   tags: TagResponse[]
   avg_rating: number | null
   review_count: number
+  energy_kcal_per_serving: number | null
+  protein_g_per_serving: number | null
+  carbs_g_per_serving: number | null
   created_at: string
   updated_at: string
 }
@@ -78,6 +81,7 @@ export interface BrowseSection {
   key: string
   title: string
   subtitle: string | null
+  badge: string | null
   recipes: RecipeSummary[]
 }
 
