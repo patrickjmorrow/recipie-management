@@ -359,6 +359,49 @@ input, select, textarea { font-family: inherit; }
   margin-top: 4px;
 }
 
+/* Browse: featured hero + curated section rails */
+.pa-browse-hero {
+  position: relative;
+  height: clamp(240px, 38vh, 380px);
+  border-radius: var(--r);
+  overflow: hidden;
+  cursor: pointer;
+  margin-bottom: 32px;
+  box-shadow: var(--shadow);
+  transition: box-shadow .2s, transform .15s;
+}
+.pa-browse-hero:hover { box-shadow: var(--shadow-hi); transform: translateY(-2px); }
+.pa-browse-hero .pa-mtile-title { font-size: clamp(18px, 2.5vw, 26px); }
+
+.pa-section { margin-bottom: 32px; }
+.pa-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.pa-section-title { font-size: 20px; font-weight: 700; line-height: 1; }
+.pa-section-sub {
+  font-size: 12px;
+  font-family: 'Space Mono', monospace;
+  color: var(--ink2);
+}
+.pa-rail {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.pa-rail-item {
+  flex: 0 0 260px;
+  max-width: 260px;
+  scroll-snap-align: start;
+}
+
 /* Card (search) */
 .pa-card-btn {
   display: block;
@@ -1172,6 +1215,7 @@ input, select, textarea { font-family: inherit; }
   .pa-mosaic { grid-template-columns: 1fr; }
   .pa-mtile.span-big, .pa-mtile.span-wide { grid-row: span 1; grid-column: span 1; }
   .pa-form-row, .pa-form-row-4 { grid-template-columns: 1fr; }
+  .pa-rail-item { flex-basis: 78vw; max-width: 78vw; }
 }
 
 /* Stars */

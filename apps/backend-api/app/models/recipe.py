@@ -23,6 +23,11 @@ class Recipe(Base):
     recipie_metadata: Mapped[dict | None] = mapped_column(JSONB)
     avg_rating: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     review_count: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    # Per-serving macros cached from the linked USDA foods (see services/nutrition.recipe_macros).
+    # NULL means "never computed" — the detail GET lazily backfills; writes recompute.
+    energy_kcal_per_serving: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    protein_g_per_serving: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
+    carbs_g_per_serving: Mapped[float | None] = mapped_column(Numeric(8, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

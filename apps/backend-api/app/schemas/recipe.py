@@ -123,3 +123,16 @@ class RecipeResponse(BaseModel):
 
 # Keep old name as alias so any existing references don't break during migration
 RecipeRead = RecipeResponse
+
+
+class BrowseSection(BaseModel):
+    """One curated landing-page section: a titled row of recipe cards."""
+
+    key: str
+    title: str
+    subtitle: str | None = None
+    recipes: list[RecipeSummary] = []
+
+
+class BrowseSectionsResponse(BaseModel):
+    sections: list[BrowseSection] = []

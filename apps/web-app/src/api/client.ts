@@ -1,4 +1,5 @@
 import type {
+  BrowseSectionsResponse,
   FoodSearchResult,
   IngredientResponse,
   MacrosPreview,
@@ -87,6 +88,14 @@ export async function getRecipes(params?: Record<string, string | string[]>): Pr
 
 export async function getRecipe(id: string): Promise<RecipeResponse> {
   return apiFetch<RecipeResponse>(`/recipes/${id}`)
+}
+
+export async function getBrowseSections(count?: number, cardLimit?: number): Promise<BrowseSectionsResponse> {
+  const params: Record<string, string> = {}
+  if (count != null) params.count = String(count)
+  if (cardLimit != null) params.card_limit = String(cardLimit)
+  const qs = Object.keys(params).length ? '?' + buildQuery(params) : ''
+  return apiFetch<BrowseSectionsResponse>(`/browse/sections${qs}`)
 }
 
 export async function createRecipe(body: RecipeCreate): Promise<RecipeResponse> {

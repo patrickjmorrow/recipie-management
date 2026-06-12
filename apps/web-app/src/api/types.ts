@@ -67,6 +67,17 @@ export interface RecipeResponse extends RecipeSummary {
   macros: RecipeMacros | null
 }
 
+export interface BrowseSection {
+  key: string
+  title: string
+  subtitle: string | null
+  recipes: RecipeSummary[]
+}
+
+export interface BrowseSectionsResponse {
+  sections: BrowseSection[]
+}
+
 export interface RecipeIngredientCreate {
   ingredient_name: string
   quantity?: number

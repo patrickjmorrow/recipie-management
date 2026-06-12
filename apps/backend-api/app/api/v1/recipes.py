@@ -38,7 +38,16 @@ from app.storage.s3 import delete_file, get_presigned_url, upload_file
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
 
-async def _get_recipe_with_relations(recipe_id: uuid.UUID, db: AsyncSession) -> Recipe | None:
+def _store_cached_macros(recipe: Recipe, macros) -> None:
+    """Persist the per-serving macros used by the nutrition browse sections."""
+    recipe.energy_kcal_per_serving = macros.energy_kcal
+    recipe.protein_g_per_serving = macros.protein_g
+    recipe.carbs_g_per_serving = macros.carbs_g
+
+
+async def _get_recipe_with_relations(
+    recipe_id: uuid.UUID, db: AsyncSession, *, refresh_macros: bool = False
+) -> Recipe | None:
     result = await db.execute(
         select(Recipe)
         .where(Recipe.id == recipe_id)
@@ -54,6 +63,10 @@ async def _get_recipe_with_relations(recipe_id: uuid.UUID, db: AsyncSession) -> 
     if recipe is not None:
         # Transient attribute read by RecipeResponse.macros (from_attributes).
         recipe.macros = recipe_macros(recipe)
+        # Writes force a refresh; reads lazily backfill the cache when it's never been computed.
+        if refresh_macros or recipe.protein_g_per_serving is None:
+            _store_cached_macros(recipe, recipe.macros)
+            await db.commit()
     return recipe
 
 
@@ -233,7 +246,7 @@ async def create_recipe(
         )
 
     await db.commit()
-    return await _get_recipe_with_relations(recipe.id, db)
+    return await _get_recipe_with_relations(recipe.id, db, refresh_macros=True)
 
 
 # Declared before "/{recipe_id}" so "macros-preview" is never parsed as a UUID.
@@ -346,7 +359,7 @@ async def update_recipe(
             )
 
     await db.commit()
-    return await _get_recipe_with_relations(recipe.id, db)
+    return await _get_recipe_with_relations(recipe.id, db, refresh_macros=True)
 
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -481,6 +494,7 @@ async def add_recipe_ingredient(
     )
     db.add(ri)
     await db.commit()
+    await _get_recipe_with_relations(recipe_id, db, refresh_macros=True)  # rebuild macro cache
     return await _get_recipe_ingredient(recipe_id, ri.id, db)
 
 
@@ -503,6 +517,7 @@ async def update_recipe_ingredient(
         ri.note = payload.note
     ri.sort_order = payload.sort_order
     await db.commit()
+    await _get_recipe_with_relations(recipe_id, db, refresh_macros=True)  # rebuild macro cache
     return await _get_recipe_ingredient(recipe_id, ri_id, db)
 
 
@@ -516,3 +531,4 @@ async def delete_recipe_ingredient(
     ri = await _get_recipe_ingredient(recipe_id, ri_id, db)
     await db.delete(ri)
     await db.commit()
+    await _get_recipe_with_relations(recipe_id, db, refresh_macros=True)  # rebuild macro cache
