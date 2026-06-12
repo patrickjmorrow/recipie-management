@@ -54,6 +54,12 @@ rustfs:
   # Root credentials. Also used as the S3 access/secret keys by the backend.
   rootUser: rustfsadmin
   rootPassword: rustfsadmin
+  # The rustfs image runs as uid/gid 10001. fsGroup makes the freshly
+  # provisioned PVC group-owned + writable so RustFS can initialize /data.
+  podSecurityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
   storage:
     size: 20Gi
     storageClass: ""
