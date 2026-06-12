@@ -1,20 +1,36 @@
-{{- $rustfsEndpoint := .Values.ingress.rustfsEndpoint }}
-{{- $rustfsBucket := .Values.ingress.rustfsBucket }}
-{{- $rustfsDocsBucket := .Values.ingress.rustfsDocsBucket }}
-{{- $publicRead := .Values.ingress.rustfsPublicRead }}
+{{- $fullName := include "recipie.fullname" . }}
+{{- $backendSvc := include "recipie.backend.fullname" . }}
+{{- $webSvc := include "recipie.web.fullname" . }}
+{{- $docsSvc := include "recipie.docs.fullname" . }}
+{{- $rustfsSvc := include "recipie.rustfs.fullname" . }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "recipie.fullname" . }}
+  name: {{ $fullName }}
   labels:
     {{- include "recipie.labels" . | nindent 4 }}
   annotations:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-    # Proxy /api → backend service
-    nginx.ingress.kubernetes.io/use-regex: "true"
+    {{- if .Values.ingress.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.certManager.clusterIssuer | quote }}
+    {{- end }}
+    # Recipe images can be large; allow sizeable uploads through the API host.
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
 spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.apiHost | quote }}]
+      secretName: {{ $fullName }}-api-tls
+    - hosts: [{{ .Values.ingress.appHost | quote }}]
+      secretName: {{ $fullName }}-app-tls
+    - hosts: [{{ .Values.ingress.docsHost | quote }}]
+      secretName: {{ $fullName }}-docs-tls
+    - hosts: [{{ .Values.ingress.s3Host | quote }}]
+      secretName: {{ $fullName }}-s3-tls
+  {{- end }}
   rules:
     # Backend API
     - host: {{ .Values.ingress.apiHost | quote }}
@@ -24,13 +40,10 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "recipie.fullname" . }}-backend
+                name: {{ $backendSvc }}
                 port:
-                  number: {{ .Values.service.port }}
-
-    # React SPA from RustFS — handled by a separate nginx VirtualServer or
-    # snippet annotation pointing to the RustFS bucket endpoint.
-    # Configured here as a placeholder; adjust based on your RustFS setup.
+                  number: {{ .Values.backend.service.port }}
+    # React SPA (nginx → RustFS app bucket)
     - host: {{ .Values.ingress.appHost | quote }}
       http:
         paths:
@@ -38,13 +51,10 @@ spec:
             pathType: Prefix
             backend:
               service:
-                # Point to an nginx proxy service or RustFS service here.
-                # Replace with your actual static-hosting service name.
-                name: {{ include "recipie.fullname" . }}-backend
+                name: {{ $webSvc }}
                 port:
-                  number: {{ .Values.service.port }}
-
-    # MkDocs site from RustFS
+                  number: 80
+    # MkDocs site (nginx → RustFS docs bucket)
     - host: {{ .Values.ingress.docsHost | quote }}
       http:
         paths:
@@ -52,7 +62,17 @@ spec:
             pathType: Prefix
             backend:
               service:
-                # Replace with your actual static-hosting service name.
-                name: {{ include "recipie.fullname" . }}-backend
+                name: {{ $docsSvc }}
                 port:
-                  number: {{ .Values.service.port }}
+                  number: 80
+    # Public RustFS S3 endpoint (presigned image URLs are signed against this host)
+    - host: {{ .Values.ingress.s3Host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $rustfsSvc }}
+                port:
+                  number: 9000

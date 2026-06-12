@@ -1,0 +1,37 @@
+{{- $rustfs := include "recipie.rustfs.fullname" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "recipie.docs.fullname" . }}
+  labels:
+    {{- include "recipie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: docs
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      sendfile on;
+      server {
+        listen 8080;
+        server_name _;
+
+        # Serve the MkDocs site from the {{ .Values.buckets.docs }} bucket.
+        # MkDocs uses directory-style URLs (clean URLs → <path>/index.html).
+        location / {
+          rewrite ^/$ /{{ .Values.buckets.docs }}/index.html break;
+          rewrite ^/(.*)/$ /{{ .Values.buckets.docs }}/$1/index.html break;
+          rewrite ^/(.*)$ /{{ .Values.buckets.docs }}/$1 break;
+          proxy_pass http://{{ $rustfs }}:9000;
+          proxy_set_header Host {{ $rustfs }}:9000;
+          proxy_intercept_errors on;
+          error_page 403 404 = @notfound;
+        }
+        location @notfound {
+          rewrite ^ /{{ .Values.buckets.docs }}/404.html break;
+          proxy_pass http://{{ $rustfs }}:9000;
+          proxy_set_header Host {{ $rustfs }}:9000;
+        }
+      }
+    }

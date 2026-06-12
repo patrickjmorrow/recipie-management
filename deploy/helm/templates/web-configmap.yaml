@@ -1,0 +1,36 @@
+{{- $rustfs := include "recipie.rustfs.fullname" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "recipie.web.fullname" . }}
+  labels:
+    {{- include "recipie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      sendfile on;
+      server {
+        listen 8080;
+        server_name _;
+
+        # Serve the React SPA from the {{ .Values.buckets.app }} bucket,
+        # falling back to index.html for client-side routes.
+        location / {
+          rewrite ^/$ /{{ .Values.buckets.app }}/index.html break;
+          rewrite ^/(.*)$ /{{ .Values.buckets.app }}/$1 break;
+          proxy_pass http://{{ $rustfs }}:9000;
+          proxy_set_header Host {{ $rustfs }}:9000;
+          proxy_intercept_errors on;
+          error_page 403 404 = @spa;
+        }
+        location @spa {
+          rewrite ^ /{{ .Values.buckets.app }}/index.html break;
+          proxy_pass http://{{ $rustfs }}:9000;
+          proxy_set_header Host {{ $rustfs }}:9000;
+        }
+      }
+    }

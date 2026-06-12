@@ -1,48 +1,136 @@
-replicaCount: 1
+# ---------------------------------------------------------------------------
+# recipie-management Helm chart values
+#
+# This chart deploys the full stack into a Kubernetes cluster:
+#   - backend API (FastAPI)
+#   - PostgreSQL via CloudNativePG  (operator must be pre-installed)
+#   - RustFS object storage (standalone)
+#   - nginx pods serving the SPA and docs from RustFS buckets
+#   - ingress (nginx) with optional cert-manager TLS
+# ---------------------------------------------------------------------------
 
-image:
-  repository: registry.example.com/recipie-management/backend
-  pullPolicy: IfNotPresent
-  tag: "latest"
+# -------------------- Backend API --------------------
+backend:
+  replicaCount: 1
+  image:
+    repository: registry.example.com/recipie-management/backend
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    ENVIRONMENT: production
+    # Browser origins allowed by CORS. Defaults to the app host when empty.
+    corsOrigins: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-service:
-  type: ClusterIP
-  port: 8000
+# -------------------- PostgreSQL (CloudNativePG) --------------------
+# Requires the CloudNativePG operator installed cluster-wide.
+cnpg:
+  enabled: true
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  database: recipie
+  owner: recipie
+  storage:
+    size: 5Gi
+    storageClass: ""   # "" → cluster default StorageClass
 
+# -------------------- RustFS (standalone object storage) --------------------
+rustfs:
+  enabled: true
+  image:
+    repository: rustfs/rustfs
+    tag: latest
+    pullPolicy: IfNotPresent
+  # Root credentials. Also used as the S3 access/secret keys by the backend.
+  rootUser: rustfsadmin
+  rootPassword: rustfsadmin
+  storage:
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# -------------------- Buckets --------------------
+# `images` stays private (served via presigned URLs); `app` and `docs` are
+# given a public-read policy so the nginx pods can proxy them anonymously.
+buckets:
+  images: recipie       # private — recipe images (backend, presigned URLs)
+  app: recipie-web      # public-read — React SPA assets
+  docs: recipie-docs    # public-read — MkDocs site
+  # Origins allowed by the bucket CORS policy (presigned image fetches).
+  corsAllowedOrigins:
+    - "*"
+
+# -------------------- Static hosting (nginx → RustFS) --------------------
+web:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+docs:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -------------------- Ingress --------------------
 ingress:
-  # Hostnames for the three public endpoints
+  className: nginx
   apiHost: api.domain.com
   appHost: app.domain.com
   docsHost: docs.domain.com
+  # Public S3 endpoint — presigned image URLs are signed against this host,
+  # so the browser must be able to reach it directly.
+  s3Host: s3.domain.com
+  annotations: {}
+  tls:
+    enabled: true
+  certManager:
+    # Name of a cert-manager ClusterIssuer used to issue per-host certs.
+    clusterIssuer: letsencrypt-prod
 
-  # RustFS S3-compatible endpoint (internal cluster URL or external)
-  rustfsEndpoint: http://rustfs.storage.svc.cluster.local:9000
-  rustfsBucket: recipie
-  rustfsDocsBucket: recipie-docs
-
-  # Set true if the RustFS buckets are publicly readable (no auth forwarding needed)
-  rustfsPublicRead: false
-
-  annotations:
-    kubernetes.io/ingress.class: nginx
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-env:
-  DATABASE_URL: ""        # set via secret in production
-  S3_ENDPOINT_URL: ""
-  S3_BUCKET_NAME: recipie
-  S3_ACCESS_KEY: ""       # set via secret
-  S3_SECRET_KEY: ""       # set via secret
-  ENVIRONMENT: production
-  CORS_ORIGINS: '["https://app.domain.com"]'
-
-# Name of an existing k8s Secret containing DATABASE_URL, S3_ACCESS_KEY, S3_SECRET_KEY
-# If empty, env values above are used directly (not recommended for prod)
-existingSecret: ""
+# -------------------- Secrets --------------------
+secrets:
+  # true  → the chart creates Secrets for DB, RustFS, and backend env.
+  # false → provide your own via existingSecret (must contain DATABASE_URL,
+  #         S3_ACCESS_KEY, S3_SECRET_KEY, JWT_SECRET_KEY, GOOGLE_CLIENT_ID,
+  #         CORS_ORIGINS). In this mode you typically run an external database,
+  #         so also set cnpg.enabled=false (the CNPG bootstrap secret is not created).
+  create: true
+  existingSecret: ""
+  # App-level secrets (only used when create=true).
+  jwtSecret: "changeme-please-override"
+  googleClientId: ""
+  # Password for the CNPG app role (owner). Override in production.
+  dbPassword: "changeme-please-override"

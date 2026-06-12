@@ -1,0 +1,68 @@
+{{- if .Values.rustfs.enabled }}
+{{- $endpoint := printf "http://%s:9000" (include "recipie.rustfs.fullname" .) }}
+{{- $cors := printf "{\"CORSRules\":[{\"AllowedHeaders\":[\"*\"],\"AllowedMethods\":[\"GET\",\"HEAD\"],\"AllowedOrigins\":%s,\"MaxAgeSeconds\":3000}]}" (toJson .Values.buckets.corsAllowedOrigins) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "recipie.rustfs.fullname" . }}-init
+  labels:
+    {{- include "recipie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rustfs-init
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "recipie.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rustfs-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: amazon/aws-cli:2.33.25
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipie.rustfs.secretName" . }}
+                  key: RUSTFS_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipie.rustfs.secretName" . }}
+                  key: RUSTFS_ROOT_PASSWORD
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_S3_ADDRESSING_STYLE
+              value: path
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              ENDPOINT={{ $endpoint }}
+              echo 'Waiting for RustFS S3 gateway...'
+              until aws --endpoint-url=$ENDPOINT s3api list-buckets >/dev/null 2>&1; do
+                echo '  ...not ready yet'; sleep 3;
+              done
+              for BUCKET in {{ .Values.buckets.images }} {{ .Values.buckets.app }} {{ .Values.buckets.docs }}; do
+                if aws --endpoint-url=$ENDPOINT s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+                  echo "Bucket $BUCKET already exists.";
+                else
+                  echo "Creating bucket $BUCKET...";
+                  aws --endpoint-url=$ENDPOINT s3api create-bucket --bucket "$BUCKET" --region us-east-1;
+                fi
+                echo "Applying CORS policy to $BUCKET...";
+                aws --endpoint-url=$ENDPOINT s3api put-bucket-cors --bucket "$BUCKET" --cors-configuration '{{ $cors }}';
+              done
+              # The SPA + docs buckets are served anonymously by nginx → public-read.
+              for BUCKET in {{ .Values.buckets.app }} {{ .Values.buckets.docs }}; do
+                echo "Applying public-read policy to $BUCKET...";
+                aws --endpoint-url=$ENDPOINT s3api put-bucket-policy --bucket "$BUCKET" --policy "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"PublicRead\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":[\"s3:GetObject\"],\"Resource\":[\"arn:aws:s3:::$BUCKET/*\"]}]}";
+              done
+              echo 'RustFS bucket init complete.'
+{{- end }}

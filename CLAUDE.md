@@ -97,30 +97,57 @@ uv run alembic downgrade -1
 
 ## Production deployment
 
+The Helm chart (`deploy/helm`) is self-contained: it stands up PostgreSQL (via the
+CloudNativePG operator), RustFS (standalone), the backend, nginx pods that serve the
+SPA/docs from RustFS, ingress, and runs DB migrations automatically as a post-install hook.
+
+### Cluster prerequisites (install once, separately — not subcharts)
+
+- **CloudNativePG operator** — provides the `postgresql.cnpg.io` `Cluster` CRD.
+- **nginx ingress controller**.
+- **cert-manager** + a `ClusterIssuer` — only when `ingress.tls.enabled` (default true).
+
+### Steps
+
 1. Run `uv sync` and commit `uv.lock` before building the Docker image.
-2. Build and push the backend image:
+2. Build and push the backend image (it now includes Alembic so the migration Job can run):
    ```bash
    docker build -t registry.example.com/recipie-management/backend:TAG apps/backend-api/
    docker push registry.example.com/recipie-management/backend:TAG
    ```
-3. Build and upload the React SPA to the RustFS `recipie` bucket.
-4. Build and upload MkDocs to the RustFS `recipie-docs` bucket.
-5. Deploy via Helm:
+3. Deploy via Helm (chart-managed secrets — override the defaults!):
    ```bash
    helm upgrade --install recipie deploy/helm \
-     --set image.tag=TAG \
-     --set existingSecret=recipie-secrets
+     --set backend.image.tag=TAG \
+     --set ingress.apiHost=api.example.com \
+     --set ingress.appHost=app.example.com \
+     --set ingress.docsHost=docs.example.com \
+     --set ingress.s3Host=s3.example.com \
+     --set ingress.certManager.clusterIssuer=letsencrypt-prod \
+     --set secrets.jwtSecret=... --set secrets.dbPassword=... \
+     --set rustfs.rootUser=... --set rustfs.rootPassword=... \
+     --set secrets.googleClientId=...
    ```
-6. Create the `recipie-secrets` k8s Secret with `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
+   The chart creates the CNPG `Cluster`, RustFS, and a backend Secret; a post-install Job
+   creates the buckets (`recipie`, `recipie-web`, `recipie-docs`) and another runs
+   `alembic upgrade head`. To bring your own credentials instead, set
+   `secrets.create=false` and `secrets.existingSecret=<name>` (the Secret must contain
+   `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `JWT_SECRET_KEY`, `GOOGLE_CLIENT_ID`,
+   `CORS_ORIGINS`).
+4. Build and upload the React SPA to the RustFS `recipie-web` bucket.
+5. Build and upload MkDocs to the RustFS `recipie-docs` bucket.
+
+> The `recipie` bucket stays private (recipe images served via presigned URLs through
+> `s3Host`); `recipie-web` and `recipie-docs` get a public-read policy so the nginx pods
+> can serve them anonymously.
 
 ## Ingress hostnames
 
 | Subdomain | Content |
 |-----------|---------|
 | `api.domain.com` | FastAPI backend |
-| `app.domain.com` | React SPA (from RustFS) |
-| `docs.domain.com` | MkDocs site (from RustFS) |
+| `app.domain.com` | React SPA (nginx → RustFS `recipie-web`) |
+| `docs.domain.com` | MkDocs site (nginx → RustFS `recipie-docs`) |
+| `s3.domain.com` | Public RustFS S3 endpoint (presigned image URLs) |
 
-> Update `deploy/helm/values.yaml` with your actual domain names before deploying.
-> The `app` and `docs` ingress rules in `templates/ingress.yaml` are placeholders —
-> configure them to proxy to your RustFS bucket endpoints once the cluster is wired up.
+> Set the four `ingress.*Host` values to your real domains before deploying.

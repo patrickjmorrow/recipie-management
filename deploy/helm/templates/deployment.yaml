@@ -1,11 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "recipie.fullname" . }}-backend
+  name: {{ include "recipie.backend.fullname" . }}
   labels:
     {{- include "recipie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.backend.replicaCount }}
   selector:
     matchLabels:
       {{- include "recipie.selectorLabels" . | nindent 6 }}
@@ -18,44 +19,24 @@ spec:
     spec:
       containers:
         - name: backend
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           ports:
             - containerPort: 8000
               protocol: TCP
+          # Secret-backed env: DATABASE_URL, S3 keys, JWT, Google client, CORS.
+          envFrom:
+            - secretRef:
+                name: {{ include "recipie.backend.secretName" . }}
           env:
-            {{- if .Values.existingSecret }}
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret }}
-                  key: DATABASE_URL
-            - name: S3_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret }}
-                  key: S3_ACCESS_KEY
-            - name: S3_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret }}
-                  key: S3_SECRET_KEY
-            {{- else }}
-            - name: DATABASE_URL
-              value: {{ .Values.env.DATABASE_URL | quote }}
-            - name: S3_ACCESS_KEY
-              value: {{ .Values.env.S3_ACCESS_KEY | quote }}
-            - name: S3_SECRET_KEY
-              value: {{ .Values.env.S3_SECRET_KEY | quote }}
-            {{- end }}
             - name: S3_ENDPOINT_URL
-              value: {{ .Values.env.S3_ENDPOINT_URL | quote }}
+              value: "http://{{ include "recipie.rustfs.fullname" . }}:9000"
+            - name: S3_PUBLIC_URL
+              value: "{{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.s3Host }}"
             - name: S3_BUCKET_NAME
-              value: {{ .Values.env.S3_BUCKET_NAME | quote }}
+              value: {{ .Values.buckets.images | quote }}
             - name: ENVIRONMENT
-              value: {{ .Values.env.ENVIRONMENT | quote }}
-            - name: CORS_ORIGINS
-              value: {{ .Values.env.CORS_ORIGINS | quote }}
+              value: {{ .Values.backend.env.ENVIRONMENT | quote }}
           livenessProbe:
             httpGet:
               path: /health
@@ -69,4 +50,4 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.backend.resources | nindent 12 }}

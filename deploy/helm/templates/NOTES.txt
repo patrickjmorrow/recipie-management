@@ -1,0 +1,23 @@
+recipie-management has been deployed as release "{{ .Release.Name }}".
+
+Endpoints (once DNS + TLS resolve):
+  API   {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.apiHost }}
+  App   {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.appHost }}
+  Docs  {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.docsHost }}
+  S3    {{ if .Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .Values.ingress.s3Host }}
+
+Check rollout status:
+  kubectl get cluster {{ include "recipie.db.name" . }}        # CNPG database
+  kubectl rollout status statefulset/{{ include "recipie.rustfs.fullname" . }}
+  kubectl get jobs -l app.kubernetes.io/instance={{ .Release.Name }}   # init + migrate hooks
+  kubectl rollout status deployment/{{ include "recipie.backend.fullname" . }}
+
+{{- if .Values.secrets.create }}
+
+WARNING: chart-managed secrets are in use. Override these before production:
+  secrets.jwtSecret, secrets.dbPassword, rustfs.rootUser, rustfs.rootPassword
+{{- end }}
+
+Reminders:
+  - Upload the built React SPA to the "{{ .Values.buckets.app }}" RustFS bucket.
+  - Upload the built MkDocs site to the "{{ .Values.buckets.docs }}" RustFS bucket.
