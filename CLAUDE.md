@@ -128,9 +128,12 @@ SPA/docs from RustFS, ingress, and runs DB migrations automatically as a post-in
      --set rustfs.rootUser=... --set rustfs.rootPassword=... \
      --set secrets.googleClientId=...
    ```
-   The chart creates the CNPG `Cluster`, RustFS, and a backend Secret; a post-install Job
-   creates the buckets (`recipie`, `recipie-web`, `recipie-docs`) and another runs
-   `alembic upgrade head`. To bring your own credentials instead, set
+   The chart creates the CNPG `Cluster`, RustFS, and a backend Secret; post-install Jobs
+   then run in order: create the buckets (`recipie`, `recipie-web`, `recipie-docs`),
+   run `alembic upgrade head`, and import USDA FoodData Central into the
+   `foods`/`food_portions` tables (`usdaImport.enabled`, default true — disable it once
+   loaded to skip re-downloading the datasets on every upgrade). To bring your own
+   credentials instead, set
    `secrets.create=false` and `secrets.existingSecret=<name>` (the Secret must contain
    `DATABASE_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `JWT_SECRET_KEY`, `GOOGLE_CLIENT_ID`,
    `CORS_ORIGINS`).

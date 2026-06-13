@@ -1,7 +1,10 @@
 """Download and import USDA FoodData Central SR Legacy + Foundation Foods.
 
-Usage (from repo root):
-    cd apps/backend-api && uv run python ../../scripts/import_usda_foods.py
+Usage (local dev):
+    cd apps/backend-api && uv run python scripts/import_usda_foods.py
+
+In production this same script is baked into the backend image and run as a
+post-install/upgrade Helm hook Job (after the migration Job).
 
 Reads DATABASE_URL from the environment, falling back to the local dev default.
 Re-running is safe: uses INSERT ... ON CONFLICT DO UPDATE (upsert by fdc_id).

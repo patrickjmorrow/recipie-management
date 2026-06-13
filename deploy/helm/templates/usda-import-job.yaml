@@ -1,0 +1,39 @@
+{{- if .Values.usdaImport.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "recipie.fullname" . }}-usda-import
+  labels:
+    {{- include "recipie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: usda-import
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    # Weight 6 → runs after the migration Job (weight 5) so the foods/
+    # food_portions tables exist before the import upserts into them.
+    "helm.sh/hook-weight": "6"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  # The download can fail transiently (large datasets over the public internet);
+  # give it a few retries before the release is marked failed.
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        {{- include "recipie.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: usda-import
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: usda-import
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command: ["python", "scripts/import_usda_foods.py"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "recipie.backend.secretName" . }}
+                  key: DATABASE_URL
+          resources:
+            {{- toYaml .Values.usdaImport.resources | nindent 12 }}
+{{- end }}

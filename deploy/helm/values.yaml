@@ -32,6 +32,25 @@ backend:
       cpu: 500m
       memory: 512Mi
 
+# -------------------- USDA food import (post-install Job) --------------------
+# Downloads USDA FoodData Central (SR Legacy + Foundation) and upserts the rows
+# into the `foods`/`food_portions` tables. Runs as a post-install/post-upgrade
+# Helm hook *after* the migration Job (hook-weight 6 vs the migration's 5).
+# The script is idempotent (upsert by fdc_id), so re-running on each upgrade is
+# safe — set enabled=false to skip it once the data is loaded and avoid
+# re-downloading several hundred MB on every helm upgrade.
+# NOTE: the Job pulls the datasets from fdc.nal.usda.gov, so the cluster needs
+# outbound internet egress, and the JSON is parsed in memory (hence 1Gi limit).
+usdaImport:
+  enabled: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
 # -------------------- PostgreSQL (CloudNativePG) --------------------
 # Requires the CloudNativePG operator installed cluster-wide.
 cnpg:
