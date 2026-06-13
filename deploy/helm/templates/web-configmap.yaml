@@ -17,6 +17,15 @@ data:
         listen 8080;
         server_name _;
 
+        # Readiness endpoint — reports that nginx itself is up, independent of
+        # whether the SPA has been uploaded to the bucket yet. This keeps the
+        # Deployment from blocking helm --wait before the post-install bucket
+        # init / SPA upload has run.
+        location = /healthz {
+          access_log off;
+          return 200 "ok\n";
+        }
+
         # Serve the React SPA from the {{ .Values.buckets.app }} bucket,
         # falling back to index.html for client-side routes.
         location / {

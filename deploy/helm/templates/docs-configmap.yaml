@@ -17,6 +17,15 @@ data:
         listen 8080;
         server_name _;
 
+        # Readiness endpoint — reports that nginx itself is up, independent of
+        # whether the docs site has been uploaded to the bucket yet. This keeps
+        # the Deployment from blocking helm --wait before the post-install
+        # bucket init / docs upload has run.
+        location = /healthz {
+          access_log off;
+          return 200 "ok\n";
+        }
+
         # Serve the MkDocs site from the {{ .Values.buckets.docs }} bucket.
         # MkDocs uses directory-style URLs (clean URLs → <path>/index.html).
         location / {

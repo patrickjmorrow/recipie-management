@@ -34,7 +34,7 @@ export default function CookMode() {
   const [recipe, setRecipe] = useState<RecipeResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [step, setStep] = useState(0)
-  const [checked, setChecked] = useState<Set<number>>(new Set())
+  const [checked, setChecked] = useState<Set<string>>(new Set())
 
   // timer
   const [secs, setSecs] = useState(0)
@@ -98,7 +98,7 @@ export default function CookMode() {
     (a, b) => a.sort_order - b.sort_order
   )
 
-  const toggleChecked = (ingId: number) => {
+  const toggleChecked = (ingId: string) => {
     setChecked(prev => {
       const next = new Set(prev)
       if (next.has(ingId)) next.delete(ingId)

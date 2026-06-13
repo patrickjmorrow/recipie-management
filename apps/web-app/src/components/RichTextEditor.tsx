@@ -1,7 +1,7 @@
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { Markdown } from 'tiptap-markdown'
+import { Markdown, type MarkdownStorage } from 'tiptap-markdown'
 import { useEffect } from 'react'
 
 interface Props {
@@ -19,13 +19,13 @@ export default function RichTextEditor({ value, onChange, placeholder }: Props) 
     ],
     content: value,
     onUpdate({ editor }) {
-      onChange(editor.storage.markdown.getMarkdown())
+      onChange((editor.storage as unknown as { markdown: MarkdownStorage }).markdown.getMarkdown())
     },
   })
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
-    const current = editor.storage.markdown.getMarkdown()
+    const current = (editor.storage as unknown as { markdown: MarkdownStorage }).markdown.getMarkdown()
     if (value !== current) {
       editor.commands.setContent(value)
     }
