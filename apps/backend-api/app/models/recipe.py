@@ -11,6 +11,11 @@ from app.models.tag import recipe_tags
 
 class Recipe(Base):
     __tablename__ = "recipes"
+    # Fetch server_default / onupdate columns (created_at, updated_at) inline via
+    # RETURNING on INSERT/UPDATE. Without this they're left expired after a write,
+    # and serializing them triggers a lazy load — which fails under async with
+    # MissingGreenlet during response validation.
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     author_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -10,6 +10,9 @@ from app.models.base import Base
 class RecipeReview(Base):
     __tablename__ = "recipe_reviews"
     __table_args__ = (UniqueConstraint("recipe_id", "reviewer_id", name="uq_recipe_review_user"),)
+    # See Recipe: load server_default/onupdate columns via RETURNING so they're
+    # never left expired after a write (avoids MissingGreenlet on serialization).
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     recipe_id: Mapped[uuid.UUID] = mapped_column(

@@ -4,8 +4,8 @@ description: |
   Recipe management full stack — FastAPI backend, PostgreSQL (via CloudNativePG),
   RustFS object storage, and nginx-served SPA + docs.
 type: application
-version: 0.2.1
-appVersion: "0.1.1"
+version: 0.2.2
+appVersion: "0.1.2"
 # Cluster prerequisites (installed separately, not subcharts):
 #   - CloudNativePG operator   (provides the postgresql.cnpg.io Cluster CRD)
 #   - nginx ingress controller

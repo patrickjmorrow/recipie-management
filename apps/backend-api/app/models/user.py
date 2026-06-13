@@ -9,6 +9,9 @@ from app.models.base import Base
 
 class User(Base):
     __tablename__ = "users"
+    # See Recipe: load server_default/onupdate columns via RETURNING so they're
+    # never left expired after a write (avoids MissingGreenlet on serialization).
+    __mapper_args__ = {"eager_defaults": True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)

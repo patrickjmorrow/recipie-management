@@ -16,7 +16,7 @@ backend:
     # TODO: replace <dockerhub-user> with your Docker Hub namespace. Repo must be public.
     repository: docker.io/morrowpj/recipie-backend
     pullPolicy: IfNotPresent
-    tag: "0.1.1"          # bump on every image push; avoid :latest in the cluster
+    tag: "0.1.2"          # bump on every image push; avoid :latest in the cluster
   service:
     type: ClusterIP
     port: 8000
